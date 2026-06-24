@@ -124,12 +124,21 @@ ELSEIF (UNIX)
     set(CMAKE_MODULE_LINKER_FLAGS_DEBUG "${CMAKE_MODULE_LINKER_FLAGS_DEBUG} -Og -ggdb")
 endif (WIN32)
 
+if (EMSCRIPTEN)
+    # pthreads-everywhere: libc++ only exposes std::thread when compiled with
+    # -pthread, and every TU / linked archive must agree on atomics + PIC.
+    add_compile_options(-pthread -fPIC)
+    add_link_options(-pthread -fPIC)
+endif ()
+
 include(DependenciesConfig)
 
 ################################################################################
 # Recurse into subdirectories
 ################################################################################
-add_subdirectory(external/angelscript_addons)
+if (ROR_USE_ANGELSCRIPT)
+    add_subdirectory(external/angelscript_addons)
+endif ()
 add_subdirectory(source/version_info)
 add_subdirectory(source/main)
 add_subdirectory(doc)
