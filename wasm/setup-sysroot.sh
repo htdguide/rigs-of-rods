@@ -75,6 +75,25 @@ emcmake cmake -S "$HERE/ogre" -B "$HERE/ogre/build-emscripten" -G Ninja \
   -DOGRE_BUILD_COMPONENT_BITES=ON
 cmake --build "$HERE/ogre/build-emscripten" --target install
 
+# --- MyGUI (Ogre-based GUI) --------------------------------------------------
+[ -d "$HERE/mygui" ] || git clone --depth 1 --branch wasm-port https://github.com/htdguide/mygui.git "$HERE/mygui"
+emcmake cmake -S "$HERE/mygui" -B "$HERE/mygui/build-emscripten" -G Ninja \
+  -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DOGRE_DIR="$SYSROOT/lib/OGRE/cmake" \
+  -DMYGUI_STATIC=ON -DMYGUI_RENDERSYSTEM=3 -DMYGUI_USE_FREETYPE=ON \
+  -DMYGUI_BUILD_DEMOS=OFF -DMYGUI_BUILD_PLUGINS=OFF -DMYGUI_BUILD_TOOLS=OFF \
+  -DMYGUI_BUILD_TEST_APP=OFF -DMYGUI_BUILD_WRAPPER=OFF -DMYGUI_BUILD_UNITTESTS=OFF \
+  -DMYGUI_DISABLE_PLUGINS=ON
+cmake --build "$HERE/mygui/build-emscripten" --target install
+
+# --- OIS (null input backend for wasm) ---------------------------------------
+[ -d "$HERE/ois" ] || git clone --depth 1 --branch wasm-port https://github.com/htdguide/OIS.git "$HERE/ois"
+emcmake cmake -S "$HERE/ois" -B "$HERE/ois/build-emscripten" -G Ninja \
+  -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DOIS_BUILD_SHARED_LIBS=OFF -DOIS_BUILD_DEMOS=OFF
+cmake --build "$HERE/ois/build-emscripten" --target install
+
 echo
-echo "Ogre wasm libs installed into: $SYSROOT"
-echo "Next: build the remaining RoR deps (fmt, rapidjson, mygui, ois) into the sysroot."
+echo "wasm sysroot complete: $SYSROOT"
+echo "  Ogre + components, fmt, rapidjson, MyGUI, OIS (null input)."
+echo "Next: configure Rigs of Rods with -DCMAKE_PREFIX_PATH=$SYSROOT (emcmake)."
