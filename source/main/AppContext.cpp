@@ -282,7 +282,13 @@ bool AppContext::SetUpRendering()
     bool autodetect_resolution = false;
     try
     {
+        // Ogre's restoreConfig() throws "not supported" on emscripten, so skip
+        // it there and always select the (statically installed) render system.
+#ifdef __EMSCRIPTEN__
+        if (true)
+#else
         if (!m_ogre_root->restoreConfig())
+#endif
         {
             autodetect_resolution = true;
             LOG(fmt::format("[RoR|Startup|Rendering] WARNING - invalid 'ogre.cfg', selecting render plugin manually..."));
@@ -312,7 +318,9 @@ bool AppContext::SetUpRendering()
         LOG(fmt::format("[RoR|Startup|Rendering] Setting renderer '{}' on behalf of 'app_rendersys_override' (user selection via Settings UI)", rs->getName()));
         // The user has selected a different render system during the previous session.
         m_ogre_root->setRenderSystem(rs);
-        m_ogre_root->saveConfig();
+#ifndef __EMSCRIPTEN__
+        m_ogre_root->saveConfig(); // throws "not supported" on emscripten
+#endif
     }
     App::app_rendersys_override->setStr("");
 
@@ -380,7 +388,9 @@ bool AppContext::SetUpRendering()
         }
 
         LOG(fmt::format("[RoR|Startup|Rendering] WARNING - invalid 'ogre.cfg', auto-detected resolution {}x{}", width, height));
-        m_ogre_root->saveConfig();
+#ifndef __EMSCRIPTEN__
+        m_ogre_root->saveConfig(); // throws "not supported" on emscripten
+#endif
     }
 
     // Review render window settings

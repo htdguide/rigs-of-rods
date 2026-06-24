@@ -49,6 +49,16 @@ build_dep() { # name git tag extra_cmake_args...
 build_dep fmt       https://github.com/fmtlib/fmt.git       10.1.1 -DFMT_TEST=OFF -DFMT_DOC=OFF
 build_dep rapidjson https://github.com/Tencent/rapidjson.git ""    -DRAPIDJSON_BUILD_TESTS=OFF -DRAPIDJSON_BUILD_EXAMPLES=OFF -DRAPIDJSON_BUILD_DOC=OFF
 
+# --- zziplib (Zip archives — needed by Ogre to read RoR's .zip resources) -----
+# Must be built before Ogre so Ogre's find_package(ZZip) enables ZIP support.
+[ -d "$HERE/zziplib" ] || git clone --depth 1 https://github.com/gdraheim/zziplib.git "$HERE/zziplib"
+emcmake cmake -S "$HERE/zziplib" -B "$HERE/zziplib/build-emscripten" -G Ninja \
+  -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_FIND_ROOT_PATH="$SYSROOT" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SHARED_LIBS=OFF \
+  -DZZIPMMAPPED=OFF -DZZIPCOMPAT=OFF -DZZIPLIBTOOL=OFF -DZZIPFSEEKO=OFF \
+  -DZZIPWRAP=OFF -DZZIPSDL=OFF -DZZIPBINS=OFF -DZZIPTEST=OFF -DZZIPDOCS=OFF
+cmake --build "$HERE/zziplib/build-emscripten" --target install
+
 # --- engine fork -------------------------------------------------------------
 if [ ! -d "$HERE/ogre/.git" ]; then
   echo "cloning Ogre fork ($OGRE_BRANCH)…"
@@ -65,6 +75,7 @@ fi
 emcmake cmake -S "$HERE/ogre" -B "$HERE/ogre/build-emscripten" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$EMSCRIPTEN_TOOLCHAIN" \
   -DCMAKE_INSTALL_PREFIX="$SYSROOT" \
+  -DCMAKE_FIND_ROOT_PATH="$SYSROOT" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
   -DOGRE_BUILD_DEPENDENCIES=OFF \
