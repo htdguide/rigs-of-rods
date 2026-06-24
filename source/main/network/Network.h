@@ -21,10 +21,14 @@
 
 #pragma once
 
+// RoRnet defines the network *protocol* data types (RoRnet::UserInfo,
+// UiStreamsHealth, ...). RoR core code uses them unconditionally, so it must be
+// available even when the SocketW networking implementation is disabled.
+#include "RoRnet.h"
+
 #ifdef USE_SOCKETW
 
 #include "Application.h"
-#include "RoRnet.h"
 
 #include <SocketW.h>
 
