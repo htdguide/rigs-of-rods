@@ -20,6 +20,12 @@ EMSCRIPTEN_TOOLCHAIN="$(em-config EMSCRIPTEN_ROOT)/cmake/Modules/Platform/Emscri
 echo "emsdk:    $(emcc -v 2>&1 | head -1)"
 echo "sysroot:  $SYSROOT"
 
+# pthreads-everywhere: every dependency archive must be compiled with -pthread
+# (atomics / shared-memory ABI) and -fPIC so it links against the pthread-enabled
+# RoR build. Propagate via the standard CXXFLAGS/CFLAGS env that cmake picks up.
+export CXXFLAGS="-pthread -fPIC ${CXXFLAGS:-}"
+export CFLAGS="-pthread -fPIC ${CFLAGS:-}"
+
 mkdir -p "$SYSROOT"
 
 # --- leaf deps via emscripten ports ------------------------------------------
@@ -103,7 +109,19 @@ emcmake cmake -S "$AS_CMAKE" -B "$AS_CMAKE/build-emscripten" -G Ninja \
   -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build "$AS_CMAKE/build-emscripten" --target install
 
+# --- OpenAL EFX headers ------------------------------------------------------
+# emscripten's OpenAL ships al.h/alc.h/alext.h but not the EFX extension headers
+# that RoR's audio includes. Vendor them from openal-soft so RoR compiles (EFX
+# is a runtime no-op on the browser backend).
+mkdir -p "$SYSROOT/include/AL"
+for h in efx.h efx-presets.h efx-creative.h; do
+  [ -f "$SYSROOT/include/AL/$h" ] || \
+    curl -sL -o "$SYSROOT/include/AL/$h" "https://raw.githubusercontent.com/kcat/openal-soft/master/include/AL/$h"
+done
+# efx.h includes "alc.h"/"al.h" relative to itself; redirect to emscripten's AL.
+sed -i'' -e 's|#include "alc.h"|#include <AL/alc.h>|' -e 's|#include "al.h"|#include <AL/al.h>|' "$SYSROOT/include/AL/efx.h"
+
 echo
 echo "wasm sysroot complete: $SYSROOT"
-echo "  Ogre + components, fmt, rapidjson, MyGUI, OIS (null input), AngelScript."
+echo "  Ogre + components, fmt, rapidjson, MyGUI, OIS (null input), AngelScript, EFX headers."
 echo "Next: configure Rigs of Rods with -DCMAKE_PREFIX_PATH=$SYSROOT (emcmake)."

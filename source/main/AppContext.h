@@ -32,6 +32,7 @@
 #include <Bites/OgreWindowEventUtilities.h>
 #include <Ogre.h>
 #include <OIS.h>
+#include <thread>
 
 namespace RoR {
 
