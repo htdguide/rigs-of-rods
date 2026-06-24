@@ -22,6 +22,12 @@ echo "sysroot:  $SYSROOT"
 
 mkdir -p "$SYSROOT"
 
+# --- leaf deps via emscripten ports ------------------------------------------
+# zlib + freetype ship as emscripten ports; pre-build them into the emscripten
+# sysroot so Ogre's find_package() locates them (Ogre's own bundled-dependency
+# downloader points at dead URLs, so we disable it below).
+embuilder build zlib freetype
+
 # --- engine fork -------------------------------------------------------------
 if [ ! -d "$HERE/ogre/.git" ]; then
   echo "cloning Ogre fork ($OGRE_BRANCH)…"
@@ -39,6 +45,9 @@ emcmake cmake -S "$HERE/ogre" -B "$HERE/ogre/build-emscripten" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$EMSCRIPTEN_TOOLCHAIN" \
   -DCMAKE_INSTALL_PREFIX="$SYSROOT" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DOGRE_BUILD_DEPENDENCIES=OFF \
+  -DOGRE_BUILD_LIBS_AS_FRAMEWORKS=OFF \
   -DOGRE_BUILD_RENDERSYSTEM_GLES2=ON \
   -DOGRE_BUILD_RENDERSYSTEM_GL=OFF \
   -DOGRE_BUILD_RENDERSYSTEM_GL3PLUS=OFF \
