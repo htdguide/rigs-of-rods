@@ -21,6 +21,12 @@
 
 #include "GfxScene.h"
 
+#ifdef __EMSCRIPTEN__
+#include <OgreRTShaderSystem.h>
+#include <OgreMaterialManager.h>
+#include <OgreSGTechniqueResolverListener.h>
+#endif
+
 #include "AppContext.h"
 #include "Actor.h"
 #include "ActorManager.h"
@@ -86,6 +92,24 @@ void GfxScene::Init()
 {
     ROR_ASSERT(!m_scene_manager);
     m_scene_manager = App::GetAppContext()->GetOgreRoot()->createSceneManager();
+
+#ifdef __EMSCRIPTEN__
+    // GLES2/WebGL2 has no fixed-function pipeline, so every material needs a
+    // shader. Bring up the RTShaderSystem and a technique-resolver listener
+    // that auto-generates shaders for RoR's fixed-function materials.
+    // RTShaderLib GLSL function library (FFPLib_*.glsl) the generator pulls from.
+    Ogre::ResourceGroupManager::getSingleton().addResourceLocation(
+        "/resources/RTShaderLib", "FileSystem", Ogre::RGN_DEFAULT);
+    Ogre::ResourceGroupManager::getSingleton().initialiseResourceGroup(Ogre::RGN_DEFAULT);
+    if (Ogre::RTShader::ShaderGenerator::initialize())
+    {
+        auto* shader_gen = Ogre::RTShader::ShaderGenerator::getSingletonPtr();
+        shader_gen->addSceneManager(m_scene_manager);
+        Ogre::MaterialManager::getSingleton().addListener(
+            new OgreBites::SGTechniqueResolverListener(shader_gen));
+    }
+#endif
+
     m_gfx_freebeams_grouping_node = m_scene_manager->getRootSceneNode()->createChildSceneNode("FreeBeam Visuals");
 
     m_skidmark_conf.LoadDefaultSkidmarkDefs();
