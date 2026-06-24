@@ -634,8 +634,11 @@ String InputEngine::getKeyNameForKeyCode(OIS::KeyCode keycode)
 
 void InputEngine::Capture()
 {
-    mKeyboard->capture();
-    mMouse->capture();
+    // mKeyboard/mMouse are null on the emscripten (deviceless) OIS backend.
+    if (mKeyboard)
+        mKeyboard->capture();
+    if (mMouse)
+        mMouse->capture();
 
     for (int i = 0; i < free_joysticks; i++)
     {
@@ -654,21 +657,24 @@ void InputEngine::windowResized(Ogre::RenderWindow* rw)
     unsigned int width, height, depth;
     int left, top;
     rw->getMetrics(width, height, depth, left, top);
-    const OIS::MouseState& ms = mMouse->getMouseState();
-    ms.width = width;
-    ms.height = height;
+    if (mMouse) // null on the emscripten (deviceless) OIS backend
+    {
+        const OIS::MouseState& ms = mMouse->getMouseState();
+        ms.width = width;
+        ms.height = height;
+    }
 }
 
 void InputEngine::SetKeyboardListener(OIS::KeyListener* keyboard_listener)
 {
-    ROR_ASSERT(mKeyboard != nullptr);
-    mKeyboard->setEventCallback(keyboard_listener);
+    if (mKeyboard) // null on the emscripten (deviceless) OIS backend
+        mKeyboard->setEventCallback(keyboard_listener);
 }
 
 void InputEngine::SetMouseListener(OIS::MouseListener* mouse_listener)
 {
-    ROR_ASSERT(mMouse != nullptr);
-    mMouse->setEventCallback(mouse_listener);
+    if (mMouse) // null on the emscripten (deviceless) OIS backend
+        mMouse->setEventCallback(mouse_listener);
 }
 
 void InputEngine::SetJoystickListener(OIS::JoyStickListener* obj)

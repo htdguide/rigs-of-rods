@@ -19,6 +19,10 @@
     along with Rigs of Rods. If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "Actor.h"
 #include "Application.h"
 #include "AppContext.h"
@@ -204,12 +208,10 @@ int main(int argc, char *argv[])
         CreateFolder(App::sys_scripts_dir->getStr());
         CreateFolder(App::sys_projects_dir->getStr());
 #endif
-
         App::GetGuiManager()->SetUpMenuWallpaper();
 
         // Add "this is obsolete" marker file to old config location
         App::GetAppContext()->SetUpObsoleteConfMarker();
-
         App::CreateThreadPool();
 
         // Load inertia config file
@@ -313,7 +315,6 @@ int main(int argc, char *argv[])
             SOUND_START(-1, SS_TRIG_MAIN_MENU);
         }
 #endif // USE_OPENAL
-
         // Hack to properly init DearIMGUI integration - force rendering image
         //  Will be properly fixed under OGRE 2x
         App::GetGuiManager()->LoadingWindow.SetProgress(100, "Hack", /*renderFrame=*/true);
@@ -2202,6 +2203,11 @@ int main(int argc, char *argv[])
 
             App::GetGuiManager()->UpdateMouseCursorVisibility();
 
+#ifdef __EMSCRIPTEN__
+            // Yield to the browser each frame so it composites the canvas and
+            // pumps events; ASYNCIFY unwinds/rewinds the blocking loop here.
+            emscripten_sleep(0);
+#endif
         } // End of main rendering/input loop
 
 #ifndef _DEBUG
