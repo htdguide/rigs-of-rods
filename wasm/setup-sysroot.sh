@@ -28,6 +28,18 @@ mkdir -p "$SYSROOT"
 # downloader points at dead URLs, so we disable it below).
 embuilder build zlib freetype
 
+# --- header/lib leaf deps (fmt, rapidjson) -----------------------------------
+build_dep() { # name git tag extra_cmake_args...
+  local name="$1" url="$2" tag="$3"; shift 3
+  [ -d "$HERE/$name" ] || git clone --depth 1 ${tag:+--branch "$tag"} "$url" "$HERE/$name"
+  emcmake cmake -S "$HERE/$name" -B "$HERE/$name/build-emscripten" -G Ninja \
+    -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "$@"
+  cmake --build "$HERE/$name/build-emscripten" --target install
+}
+build_dep fmt       https://github.com/fmtlib/fmt.git       10.1.1 -DFMT_TEST=OFF -DFMT_DOC=OFF
+build_dep rapidjson https://github.com/Tencent/rapidjson.git ""    -DRAPIDJSON_BUILD_TESTS=OFF -DRAPIDJSON_BUILD_EXAMPLES=OFF -DRAPIDJSON_BUILD_DOC=OFF
+
 # --- engine fork -------------------------------------------------------------
 if [ ! -d "$HERE/ogre/.git" ]; then
   echo "cloning Ogre fork ($OGRE_BRANCH)…"
@@ -54,9 +66,15 @@ emcmake cmake -S "$HERE/ogre" -B "$HERE/ogre/build-emscripten" -G Ninja \
   -DOGRE_BUILD_PLUGIN_CG=OFF \
   -DOGRE_BUILD_SAMPLES=OFF \
   -DOGRE_BUILD_TOOLS=OFF \
-  -DOGRE_BUILD_TESTS=OFF
-# cmake --build "$HERE/ogre/build-emscripten" --target install
+  -DOGRE_BUILD_TESTS=OFF \
+  -DOGRE_BUILD_COMPONENT_TERRAIN=ON \
+  -DOGRE_BUILD_COMPONENT_PAGING=ON \
+  -DOGRE_BUILD_COMPONENT_OVERLAY=ON \
+  -DOGRE_BUILD_COMPONENT_RTSHADERSYSTEM=ON \
+  -DOGRE_BUILD_COMPONENT_MESHLODGENERATOR=ON \
+  -DOGRE_BUILD_COMPONENT_BITES=ON
+cmake --build "$HERE/ogre/build-emscripten" --target install
 
 echo
-echo "Phase-0 scaffolding done. Next: get the Ogre wasm build to install,"
-echo "then point RoR's CMAKE_PREFIX_PATH at: $SYSROOT"
+echo "Ogre wasm libs installed into: $SYSROOT"
+echo "Next: build the remaining RoR deps (fmt, rapidjson, mygui, ois) into the sysroot."

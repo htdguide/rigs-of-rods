@@ -41,7 +41,11 @@ tmp
 Stamp
 *.tar.gz
 *.zip
-# wasm port build artifacts
+# wasm port build artifacts (dep clones + sysroot)
 wasm/ogre/
+wasm/fmt/
+wasm/rapidjson/
+wasm/mygui/
+wasm/ois/
 wasm/sysroot/
 build-emscripten/
