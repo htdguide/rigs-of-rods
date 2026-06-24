@@ -21,6 +21,15 @@
 
 #include "AppContext.h"
 
+#ifdef __EMSCRIPTEN__
+// Static Ogre build for the web: there are no loadable plugin .so files, so the
+// render system and plugins are linked in and registered directly.
+#include <OgreGLES2Plugin.h>
+#include <OgreParticleFXPlugin.h>
+#include <OgreOctreePlugin.h>
+#include <OgreSTBICodec.h>
+#endif
+
 #include "AdvancedScreen.h"
 #include "Actor.h"
 #include "CameraManager.h"
@@ -230,6 +239,14 @@ bool AppContext::SetUpRendering()
     LOG(fmt::format("[RoR|Startup|Rendering] Creating OGRE renderer Root object, config='{}'", cfg_filepath));
     m_ogre_root = new Ogre::Root("", cfg_filepath, log_filepath);
 
+#ifdef __EMSCRIPTEN__
+    // Static build: install the render system + plugins directly (no plugins.cfg).
+    LOG("[RoR|Startup|Rendering] Installing static OGRE plugins (emscripten).");
+    m_ogre_root->installPlugin(new Ogre::GLES2Plugin());
+    m_ogre_root->installPlugin(new Ogre::ParticleFXPlugin());
+    m_ogre_root->installPlugin(new Ogre::OctreePlugin());
+    m_ogre_root->installPlugin(new Ogre::STBIPlugin());
+#else
     // load OGRE plugins manually
 #ifdef _DEBUG
     std::string plugins_path = PathCombine(RoR::App::sys_process_dir->getStr(), "plugins_d.cfg");
@@ -255,10 +272,11 @@ bool AppContext::SetUpRendering()
     catch (Ogre::Exception& e)
     {
         ErrorUtils::ShowError (
-            _L("Startup error"), 
+            _L("Startup error"),
             fmt::format(_L("Could not load file '{}' - make sure the game is installed correctly.\n\nDetailed info: {}"), plugins_path, e.getDescription()));
         return false;
     }
+#endif // __EMSCRIPTEN__
 
     // Load renderer configuration
     bool autodetect_resolution = false;
@@ -530,6 +548,8 @@ bool AppContext::SetUpProgramPaths()
             ror_homedir << user_home << PATH_SLASH << ".rigsofrods";
 #elif OGRE_PLATFORM == OGRE_PLATFORM_APPLE
         ror_homedir << user_home << PATH_SLASH << "RigsOfRods";
+#elif OGRE_PLATFORM == OGRE_PLATFORM_EMSCRIPTEN
+        ror_homedir << user_home << PATH_SLASH << ".rigsofrods";
 #endif
         CreateFolder(ror_homedir.ToCStr ());
         App::sys_user_dir->setStr(ror_homedir.ToCStr ());

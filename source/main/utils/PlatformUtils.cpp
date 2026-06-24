@@ -184,6 +184,11 @@ std::string GetUserHomeDirectory()
 
 std::string GetExecutablePath()
 {
+#ifdef __EMSCRIPTEN__
+    // No /proc/self/exe in the browser; use a fixed virtual path so the process
+    // directory resolves to "/" in MEMFS.
+    return "/RoR";
+#else
     const int BUF_SIZE = 500;
     std::string buf_str(BUF_SIZE, 0);
     // Linux or POSIX assumed; http://stackoverflow.com/a/625523
@@ -194,6 +199,7 @@ std::string GetExecutablePath()
     }
 
     return std::move(buf_str);
+#endif // __EMSCRIPTEN__
 }
 
 void OpenUrlInDefaultBrowser(std::string const& url)

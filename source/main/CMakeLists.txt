@@ -282,6 +282,27 @@ endif ()
 set(BINNAME "RoR")
 add_executable(${BINNAME} ${SOURCE_FILES})
 
+if (EMSCRIPTEN)
+    # Emit a full HTML shell (RoR.html + .js + .wasm).
+    set_target_properties(${BINNAME} PROPERTIES SUFFIX ".html")
+    target_link_options(${BINNAME} PRIVATE
+        # WebGL2 / full GLES3 entry points for the Ogre GLES2 render system.
+        -sFULL_ES3 -sMAX_WEBGL_VERSION=2 -sMIN_WEBGL_VERSION=2
+        # RoR's main loop blocks (while state != SHUTDOWN { renderOneFrame }),
+        # so ASYNCIFY lets it yield to the browser each frame.
+        -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576
+        # Fixed (non-growing) shared heap — growth invalidates worker atomics
+        # under pthreads. RoR is heavy, so start large.
+        -sINITIAL_MEMORY=1536MB -sMAXIMUM_MEMORY=1536MB
+        -sSTACK_SIZE=4MB
+        # Pre-spawn a worker pool for RoR's threadpool / physics / network
+        # threads (creating one while the main thread is blocked would deadlock).
+        -sPTHREAD_POOL_SIZE=16
+        -sFORCE_FILESYSTEM=1 -sEXIT_RUNTIME=0 -sASSERTIONS=1
+        "-sEXPORTED_RUNTIME_METHODS=FS,callMain,PThread"
+        --shell-file ${CMAKE_SOURCE_DIR}/wasm/shell.html)
+endif ()
+
 if (WIN32)
     set_target_properties(${BINNAME} PROPERTIES WIN32_EXECUTABLE YES)
     # disable some annoying VS warnings:
