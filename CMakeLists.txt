@@ -132,6 +132,11 @@ if (EMSCRIPTEN)
     # The bundled half-float header assumes a full C++11 <cfenv>; emscripten's
     # libc does not define the FE_* exception macros it uses for rounding.
     add_compile_definitions(HALF_ENABLE_CPP11_CFENV=0)
+    # Ogre's exported targets reference some libs by plain name
+    # (e.g. OgreGLSupportStatic); put the wasm sysroot lib dirs on the link path.
+    foreach (_p IN LISTS CMAKE_PREFIX_PATH)
+        link_directories(${_p}/lib ${_p}/lib/OGRE)
+    endforeach ()
 endif ()
 
 include(DependenciesConfig)

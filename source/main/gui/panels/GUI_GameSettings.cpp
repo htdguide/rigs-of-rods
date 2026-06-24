@@ -28,7 +28,11 @@
 #include "SoundManager.h"
 
 #ifdef USE_OPENAL
-#   include <alc.h>
+#   ifdef __APPLE__
+#       include <OpenAL/alc.h>
+#   else
+#       include <AL/alc.h>
+#   endif
 #endif
 
 using namespace RoR;

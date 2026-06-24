@@ -401,6 +401,9 @@ target_include_directories(${BINNAME} PRIVATE
 
 if (WIN32)
     set(OS_LIBS "Ws2_32")
+elseif (EMSCRIPTEN)
+    # No X11 / dl / rt on the web; the browser provides the platform layer.
+    set(OS_LIBS "")
 else ()
     #  include_directories(${GTK_INCLUDE_DIRS})
     set(OS_LIBS "X11 -l${CMAKE_DL_LIBS} -lrt")
