@@ -47,5 +47,6 @@ wasm/fmt/
 wasm/rapidjson/
 wasm/mygui/
 wasm/ois/
+wasm/angelscript_sdk/
 wasm/sysroot/
 build-emscripten/

@@ -93,7 +93,17 @@ emcmake cmake -S "$HERE/ois" -B "$HERE/ois/build-emscripten" -G Ninja \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DOIS_BUILD_SHARED_LIBS=OFF -DOIS_BUILD_DEMOS=OFF
 cmake --build "$HERE/ois/build-emscripten" --target install
 
+# --- AngelScript (scripting VM — portable interpreter, builds for wasm) -------
+if [ ! -d "$HERE/angelscript_sdk" ]; then
+  curl -sL -o "$HERE/as.zip" "https://www.angelcode.com/angelscript/sdk/files/angelscript_2.35.1.zip"
+  unzip -q "$HERE/as.zip" -d "$HERE/angelscript_sdk" && rm -f "$HERE/as.zip"
+fi
+AS_CMAKE="$HERE/angelscript_sdk/sdk/angelscript/projects/cmake"
+emcmake cmake -S "$AS_CMAKE" -B "$AS_CMAKE/build-emscripten" -G Ninja \
+  -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build "$AS_CMAKE/build-emscripten" --target install
+
 echo
 echo "wasm sysroot complete: $SYSROOT"
-echo "  Ogre + components, fmt, rapidjson, MyGUI, OIS (null input)."
+echo "  Ogre + components, fmt, rapidjson, MyGUI, OIS (null input), AngelScript."
 echo "Next: configure Rigs of Rods with -DCMAKE_PREFIX_PATH=$SYSROOT (emcmake)."
