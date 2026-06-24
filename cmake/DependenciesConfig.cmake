@@ -2,6 +2,14 @@
 set(CMAKE_THREAD_PREFER_PTHREAD YES)
 find_package(Threads REQUIRED)
 
+# On emscripten, Ogre's exported targets reference ZLIB::ZLIB and
+# Freetype::Freetype (provided by emscripten ports); create those imported
+# targets before OGRE is found.
+if(EMSCRIPTEN)
+    find_package(ZLIB REQUIRED)
+    find_package(Freetype REQUIRED)
+endif()
+
 # --- Ogre 3D graphics engine ---
 find_package(OGRE 1.11 REQUIRED COMPONENTS Bites Overlay Paging RTShaderSystem MeshLodGenerator Terrain)
 
