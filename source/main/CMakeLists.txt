@@ -300,6 +300,9 @@ if (EMSCRIPTEN)
         -sPTHREAD_POOL_SIZE=16
         -sFORCE_FILESYSTEM=1 -sEXIT_RUNTIME=0 -sASSERTIONS=1
         "-sEXPORTED_RUNTIME_METHODS=FS,callMain,PThread"
+        # Bundle RoR's base resources into MEMFS at /resources (where
+        # SetUpResourcesDir looks). Generated into bin/resources at configure.
+        "--preload-file=${CMAKE_BINARY_DIR}/bin/resources@/resources"
         --shell-file ${CMAKE_SOURCE_DIR}/wasm/shell.html)
 endif ()
 

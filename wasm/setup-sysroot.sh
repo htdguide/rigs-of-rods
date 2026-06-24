@@ -23,7 +23,10 @@ echo "sysroot:  $SYSROOT"
 # pthreads-everywhere: every dependency archive must be compiled with -pthread
 # (atomics / shared-memory ABI) and -fPIC so it links against the pthread-enabled
 # RoR build. Propagate via the standard CXXFLAGS/CFLAGS env that cmake picks up.
-export CXXFLAGS="-pthread -fPIC ${CXXFLAGS:-}"
+# -fexceptions: RoR catches exceptions thrown by Ogre (e.g. ConfigFile::load),
+# so every dependency must be compiled with exception support enabled (em++
+# defaults to -fno-exceptions, which turns a throw into abort()).
+export CXXFLAGS="-pthread -fPIC -fexceptions ${CXXFLAGS:-}"
 export CFLAGS="-pthread -fPIC ${CFLAGS:-}"
 
 mkdir -p "$SYSROOT"

@@ -129,6 +129,10 @@ if (EMSCRIPTEN)
     # -pthread, and every TU / linked archive must agree on atomics + PIC.
     add_compile_options(-pthread -fPIC)
     add_link_options(-pthread -fPIC)
+    # Exceptions: RoR + Ogre throw/catch across each other, so enable the
+    # exception ABI everywhere (em++ defaults to -fno-exceptions => abort).
+    add_compile_options(-fexceptions)
+    add_link_options(-fexceptions)
     # The bundled half-float header assumes a full C++11 <cfenv>; emscripten's
     # libc does not define the FE_* exception macros it uses for rounding.
     add_compile_definitions(HALF_ENABLE_CPP11_CFENV=0)
