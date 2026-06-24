@@ -28,11 +28,9 @@ find_package(RapidJSON REQUIRED)
 # Components
 
 # --- OpenAL - audio library ---
-# emscripten's OpenAL lacks the EFX extension headers RoR's audio relies on;
-# disable audio for the wasm build (boots silent for now).
-if (NOT EMSCRIPTEN)
-    find_package(OpenAL)
-endif ()
+# emscripten provides OpenAL (backed by Web Audio); the EFX extension headers
+# are vendored into the wasm sysroot by wasm/setup-sysroot.sh.
+find_package(OpenAL)
 cmake_dependent_option(ROR_USE_OPENAL "use OPENAL" ON "OPENAL_FOUND" OFF)
 
 # --- Discord RPC -- Rich Presence for discord ---

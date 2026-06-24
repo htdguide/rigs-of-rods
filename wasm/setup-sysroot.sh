@@ -99,6 +99,16 @@ emcmake cmake -S "$HERE/ois" -B "$HERE/ois/build-emscripten" -G Ninja \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DOIS_BUILD_SHARED_LIBS=OFF -DOIS_BUILD_DEMOS=OFF
 cmake --build "$HERE/ois/build-emscripten" --target install
 
+# --- SocketW (TCP wrapper) ---------------------------------------------------
+# Compiles for wasm via emscripten's BSD-socket emulation. Non-functional at
+# runtime (browsers have no raw TCP) but keeps RoR's networking code paths
+# compiling so the Network class is a complete type.
+[ -d "$HERE/socketw" ] || git clone --depth 1 https://github.com/RigsOfRods/socketw.git "$HERE/socketw"
+emcmake cmake -S "$HERE/socketw" -B "$HERE/socketw/build-emscripten" -G Ninja \
+  -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SHARED_LIBS=OFF
+cmake --build "$HERE/socketw/build-emscripten" --target install
+
 # --- AngelScript (scripting VM — portable interpreter, builds for wasm) -------
 if [ ! -d "$HERE/angelscript_sdk" ]; then
   curl -sL -o "$HERE/as.zip" "https://www.angelcode.com/angelscript/sdk/files/angelscript_2.35.1.zip"
@@ -114,12 +124,26 @@ cmake --build "$AS_CMAKE/build-emscripten" --target install
 # that RoR's audio includes. Vendor them from openal-soft so RoR compiles (EFX
 # is a runtime no-op on the browser backend).
 mkdir -p "$SYSROOT/include/AL"
-for h in efx.h efx-presets.h efx-creative.h; do
+for h in efx-presets.h efx-creative.h; do
   [ -f "$SYSROOT/include/AL/$h" ] || \
     curl -sL -o "$SYSROOT/include/AL/$h" "https://raw.githubusercontent.com/kcat/openal-soft/master/include/AL/$h"
 done
-# efx.h includes "alc.h"/"al.h" relative to itself; redirect to emscripten's AL.
-sed -i'' -e 's|#include "alc.h"|#include <AL/alc.h>|' -e 's|#include "al.h"|#include <AL/al.h>|' "$SYSROOT/include/AL/efx.h"
+# efx.h needs two fixes for emscripten's OpenAL: redirect its relative
+# "alc.h"/"al.h" includes to <AL/...>, and define the AL_APIENTRY /
+# AL_API_NOEXCEPT17 calling-convention macros it expects (emscripten's al.h
+# does not provide them).
+if [ ! -f "$SYSROOT/include/AL/efx.h" ]; then
+  curl -sL "https://raw.githubusercontent.com/kcat/openal-soft/master/include/AL/efx.h" -o "$HERE/efx_orig.h"
+  SYSROOT="$SYSROOT" HERE="$HERE" python3 - <<'PY'
+import os
+src = open(os.environ['HERE'] + '/efx_orig.h').read()
+src = src.replace('#include "alc.h"', '#include <AL/alc.h>').replace('#include "al.h"', '#include <AL/al.h>')
+shim = ('#ifndef AL_APIENTRY\n#define AL_APIENTRY\n#endif\n'
+        '#ifndef AL_API_NOEXCEPT17\n#define AL_API_NOEXCEPT17\n#endif\n')
+open(os.environ['SYSROOT'] + '/include/AL/efx.h', 'w').write(shim + src)
+PY
+  rm -f "$HERE/efx_orig.h"
+fi
 
 echo
 echo "wasm sysroot complete: $SYSROOT"

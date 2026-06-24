@@ -50,3 +50,4 @@ wasm/ois/
 wasm/angelscript_sdk/
 wasm/sysroot/
 build-emscripten/
+wasm/socketw/
