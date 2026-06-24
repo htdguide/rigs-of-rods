@@ -328,9 +328,9 @@ void GUIManager::NewImGuiFrame(float dt)
     OIS::Keyboard* kb = App::GetInputEngine()->GetOisKeyboard();
 
      // Read keyboard modifiers inputs
-    io.KeyCtrl = kb->isKeyDown(OIS::KC_LCONTROL);
-    io.KeyShift = kb->isKeyDown(OIS::KC_LSHIFT);
-    io.KeyAlt = kb->isKeyDown(OIS::KC_LMENU);
+    io.KeyCtrl = kb && kb->isKeyDown(OIS::KC_LCONTROL); // kb null on emscripten OIS backend
+    io.KeyShift = kb && kb->isKeyDown(OIS::KC_LSHIFT);
+    io.KeyAlt = kb && kb->isKeyDown(OIS::KC_LMENU);
     io.KeySuper = false;
 
     // Call IMGUI
