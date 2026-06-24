@@ -109,6 +109,18 @@ emcmake cmake -S "$HERE/socketw" -B "$HERE/socketw/build-emscripten" -G Ninja \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SHARED_LIBS=OFF
 cmake --build "$HERE/socketw/build-emscripten" --target install
 
+# --- libcurl (HTTP) ----------------------------------------------------------
+# RoR's Network header hard-references CURLcode, so curl must be present to
+# compile even with networking non-functional. Build a minimal static libcurl
+# (no TLS / extra protocols).
+[ -d "$HERE/curl" ] || git clone --depth 1 --branch curl-8_2_1 https://github.com/curl/curl.git "$HERE/curl"
+emcmake cmake -S "$HERE/curl" -B "$HERE/curl/build-emscripten" -G Ninja \
+  -DCMAKE_INSTALL_PREFIX="$SYSROOT" -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SHARED_LIBS=OFF -DBUILD_CURL_EXE=OFF \
+  -DBUILD_TESTING=OFF -DCURL_USE_OPENSSL=OFF -DCURL_USE_LIBPSL=OFF -DCURL_ENABLE_SSL=OFF \
+  -DUSE_NGHTTP2=OFF -DCURL_USE_LIBSSH2=OFF -DCURL_ZLIB=OFF -DCURL_DISABLE_LDAP=ON
+cmake --build "$HERE/curl/build-emscripten" --target install
+
 # --- AngelScript (scripting VM — portable interpreter, builds for wasm) -------
 if [ ! -d "$HERE/angelscript_sdk" ]; then
   curl -sL -o "$HERE/as.zip" "https://www.angelcode.com/angelscript/sdk/files/angelscript_2.35.1.zip"
