@@ -41,3 +41,7 @@ tmp
 Stamp
 *.tar.gz
 *.zip
+# wasm port build artifacts
+wasm/ogre/
+wasm/sysroot/
+build-emscripten/

@@ -44,17 +44,25 @@ wasm** and **replacing the ones browsers can't support**.
 Conan provides none of these for wasm. We stand up our own **wasm sysroot**
 (prebuilt deps on `CMAKE_PREFIX_PATH`), exactly like the SoH `wasm-sysroot`.
 
-## 3. Engine decision (pick before Phase 2)
+## 3. Engine decision — DECIDED: Option A
 
-- **Option A — Fork the existing Ogre 1.11 RoR fork** and add emscripten
-  support (EmscriptenGLSupport + GLES2 RS over WebGL2). Keeps RoR's engine API
-  usage unchanged. This mirrors SoH forking libultraship/ZAPDTR and pointing the
-  submodule at a `wasm-port` branch. **Recommended for fastest boot.**
-- **Option B — Bump to modern OGRE 14.x** (official Emscripten target). Most
-  sustainable long-term, but RoR pins a custom 1.11 fork with patches → API
-  migration cost across all of `source/main/gfx`.
+**Path A chosen.** RoR consumes Ogre via ror-dependencies, which builds
+**`OGRECave/ogre` v1.11.6** (commit `3fc7c8e`). Crucially, that tag already
+ships an Emscripten backend:
+`RenderSystems/GLSupport/src/EGL/Emscripten/OgreEmscriptenEGLSupport.cpp` +
+`OgreEmscriptenEGLWindow.cpp`, plus an emscripten CMake toolchain. So Path A is
+*build the existing GLES2 RS + Emscripten EGL window for wasm*, not write one
+from scratch.
 
-Recommendation: **A first** to prove the port, evaluate **B** later.
+Forks created (mirrors SoH forking libultraship/ZAPDTR to `wasm-port`):
+- engine: **`github.com/htdguide/ogre`** branch `wasm-port` (at v1.11.6)
+- game:   **`github.com/htdguide/rigs-of-rods`** branch `wasm-port`
+
+Option B (bump to OGRE 14.x) deferred — revisit only if 1.11.6's GLES2/WebGL2
+path proves too limited.
+
+Cg must still be dropped (no wasm); terrain PSSM + hydrax water shaders
+rewritten as GLSL ES.
 
 ## 4. Threading + main loop (SoH playbook)
 
