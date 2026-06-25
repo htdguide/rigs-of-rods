@@ -28,6 +28,13 @@
 #include <OgreParticleFXPlugin.h>
 #include <OgreOctreePlugin.h>
 #include <OgreSTBICodec.h>
+// Browser input: there is no OIS backend on the web, so HTML5 DOM events are
+// fed straight into Dear ImGui's IO (see SetUpInput below).
+#include <emscripten/html5.h>
+#include <imgui.h>
+#include <OISKeyboard.h>
+#include <string>
+#include <unordered_map>
 #endif
 
 #include "AdvancedScreen.h"
@@ -69,6 +76,123 @@ using namespace RoR;
 // --------------------------
 // Input handling
 
+#ifdef __EMSCRIPTEN__
+// Map a browser KeyboardEvent.code to an OIS::KeyCode. Dear ImGui's key state
+// (io.KeysDown) is indexed by OIS codes here, because OgreImGui::Init() fills
+// io.KeyMap[] with OIS::KC_* values.
+static int RoR_BrowserCodeToOIS(const char* code)
+{
+    static const std::unordered_map<std::string, int> map = {
+        {"Escape", OIS::KC_ESCAPE},
+        {"Digit1", OIS::KC_1}, {"Digit2", OIS::KC_2}, {"Digit3", OIS::KC_3},
+        {"Digit4", OIS::KC_4}, {"Digit5", OIS::KC_5}, {"Digit6", OIS::KC_6},
+        {"Digit7", OIS::KC_7}, {"Digit8", OIS::KC_8}, {"Digit9", OIS::KC_9},
+        {"Digit0", OIS::KC_0},
+        {"Minus", OIS::KC_MINUS}, {"Equal", OIS::KC_EQUALS},
+        {"Backspace", OIS::KC_BACK}, {"Tab", OIS::KC_TAB},
+        {"KeyQ", OIS::KC_Q}, {"KeyW", OIS::KC_W}, {"KeyE", OIS::KC_E},
+        {"KeyR", OIS::KC_R}, {"KeyT", OIS::KC_T}, {"KeyY", OIS::KC_Y},
+        {"KeyU", OIS::KC_U}, {"KeyI", OIS::KC_I}, {"KeyO", OIS::KC_O},
+        {"KeyP", OIS::KC_P},
+        {"BracketLeft", OIS::KC_LBRACKET}, {"BracketRight", OIS::KC_RBRACKET},
+        {"Enter", OIS::KC_RETURN}, {"NumpadEnter", OIS::KC_NUMPADENTER},
+        {"ControlLeft", OIS::KC_LCONTROL}, {"ControlRight", OIS::KC_RCONTROL},
+        {"KeyA", OIS::KC_A}, {"KeyS", OIS::KC_S}, {"KeyD", OIS::KC_D},
+        {"KeyF", OIS::KC_F}, {"KeyG", OIS::KC_G}, {"KeyH", OIS::KC_H},
+        {"KeyJ", OIS::KC_J}, {"KeyK", OIS::KC_K}, {"KeyL", OIS::KC_L},
+        {"Semicolon", OIS::KC_SEMICOLON}, {"Quote", OIS::KC_APOSTROPHE},
+        {"Backquote", OIS::KC_GRAVE},
+        {"ShiftLeft", OIS::KC_LSHIFT}, {"ShiftRight", OIS::KC_RSHIFT},
+        {"Backslash", OIS::KC_BACKSLASH},
+        {"KeyZ", OIS::KC_Z}, {"KeyX", OIS::KC_X}, {"KeyC", OIS::KC_C},
+        {"KeyV", OIS::KC_V}, {"KeyB", OIS::KC_B}, {"KeyN", OIS::KC_N},
+        {"KeyM", OIS::KC_M},
+        {"Comma", OIS::KC_COMMA}, {"Period", OIS::KC_PERIOD}, {"Slash", OIS::KC_SLASH},
+        {"AltLeft", OIS::KC_LMENU}, {"AltRight", OIS::KC_RMENU},
+        {"Space", OIS::KC_SPACE}, {"CapsLock", OIS::KC_CAPITAL},
+        {"F1", OIS::KC_F1}, {"F2", OIS::KC_F2}, {"F3", OIS::KC_F3},
+        {"F4", OIS::KC_F4}, {"F5", OIS::KC_F5}, {"F6", OIS::KC_F6},
+        {"F7", OIS::KC_F7}, {"F8", OIS::KC_F8}, {"F9", OIS::KC_F9},
+        {"F10", OIS::KC_F10}, {"F11", OIS::KC_F11}, {"F12", OIS::KC_F12},
+        {"ArrowUp", OIS::KC_UP}, {"ArrowDown", OIS::KC_DOWN},
+        {"ArrowLeft", OIS::KC_LEFT}, {"ArrowRight", OIS::KC_RIGHT},
+        {"Home", OIS::KC_HOME}, {"End", OIS::KC_END},
+        {"PageUp", OIS::KC_PGUP}, {"PageDown", OIS::KC_PGDOWN},
+        {"Insert", OIS::KC_INSERT}, {"Delete", OIS::KC_DELETE},
+        {"Numpad0", OIS::KC_NUMPAD0}, {"Numpad1", OIS::KC_NUMPAD1},
+        {"Numpad2", OIS::KC_NUMPAD2}, {"Numpad3", OIS::KC_NUMPAD3},
+        {"Numpad4", OIS::KC_NUMPAD4}, {"Numpad5", OIS::KC_NUMPAD5},
+        {"Numpad6", OIS::KC_NUMPAD6}, {"Numpad7", OIS::KC_NUMPAD7},
+        {"Numpad8", OIS::KC_NUMPAD8}, {"Numpad9", OIS::KC_NUMPAD9},
+    };
+    auto it = map.find(code);
+    return (it != map.end()) ? it->second : -1;
+}
+
+static EM_BOOL RoR_OnBrowserMouse(int eventType, const EmscriptenMouseEvent* e, void*)
+{
+    ImGuiIO& io = ImGui::GetIO();
+
+    // The canvas backbuffer (io.DisplaySize) is usually a different size than the
+    // CSS-stretched <canvas> element, so scale DOM coords into ImGui's space.
+    double cssW = 0.0, cssH = 0.0;
+    emscripten_get_element_css_size("#canvas", &cssW, &cssH);
+    float sx = (cssW > 0.0) ? (io.DisplaySize.x / (float)cssW) : 1.0f;
+    float sy = (cssH > 0.0) ? (io.DisplaySize.y / (float)cssH) : 1.0f;
+    io.MousePos = ImVec2((float)e->targetX * sx, (float)e->targetY * sy);
+
+    if (eventType == EMSCRIPTEN_EVENT_MOUSEDOWN || eventType == EMSCRIPTEN_EVENT_MOUSEUP)
+    {
+        const bool down = (eventType == EMSCRIPTEN_EVENT_MOUSEDOWN);
+        // DOM button: 0=left,1=middle,2=right. ImGui IO here follows OIS order:
+        // [0]=left,[1]=right,[2]=middle.
+        int btn = (e->button == 0) ? 0 : (e->button == 2) ? 1 : (e->button == 1) ? 2 : -1;
+        if (btn >= 0)
+        {
+            io.MouseDown[btn] = down;
+        }
+    }
+    return io.WantCaptureMouse ? EM_TRUE : EM_FALSE;
+}
+
+static EM_BOOL RoR_OnBrowserWheel(int, const EmscriptenWheelEvent* e, void*)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    if (e->deltaY != 0.0)
+    {
+        io.MouseWheel += (e->deltaY < 0.0) ? 1.0f : -1.0f;
+    }
+    return io.WantCaptureMouse ? EM_TRUE : EM_FALSE;
+}
+
+static EM_BOOL RoR_OnBrowserKey(int eventType, const EmscriptenKeyboardEvent* e, void*)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    const bool down = (eventType == EMSCRIPTEN_EVENT_KEYDOWN);
+
+    io.KeyCtrl  = e->ctrlKey;
+    io.KeyShift = e->shiftKey;
+    io.KeyAlt   = e->altKey;
+    io.KeySuper = e->metaKey;
+
+    int kc = RoR_BrowserCodeToOIS(e->code);
+    if (kc >= 0 && kc < 512)
+    {
+        io.KeysDown[kc] = down;
+    }
+
+    // Printable character → text input (e->key is the resulting character, e.g. "a").
+    if (down && e->key[0] != '\0' && e->key[1] == '\0' && (unsigned char)e->key[0] >= 32)
+    {
+        io.AddInputCharacter((unsigned int)(unsigned char)e->key[0]);
+    }
+
+    // Consume the event (prevent page scroll on arrows/space etc.) only when the
+    // GUI actually wants the keyboard, so browser shortcuts still work otherwise.
+    return io.WantCaptureKeyboard ? EM_TRUE : EM_FALSE;
+}
+#endif // __EMSCRIPTEN__
+
 bool AppContext::SetUpInput()
 {
     App::CreateInputEngine();
@@ -80,6 +204,20 @@ bool AppContext::SetUpInput()
     {
         m_force_feedback.Setup();
     }
+
+#ifdef __EMSCRIPTEN__
+    // No OIS on the web: route browser DOM input into Dear ImGui directly so the
+    // menus are usable (mouse clicks + keyboard navigation / text entry).
+    const char* canvas = "#canvas";
+    emscripten_set_mousemove_callback(canvas, nullptr, EM_TRUE, RoR_OnBrowserMouse);
+    emscripten_set_mousedown_callback(canvas, nullptr, EM_TRUE, RoR_OnBrowserMouse);
+    emscripten_set_mouseup_callback(canvas, nullptr, EM_TRUE, RoR_OnBrowserMouse);
+    emscripten_set_wheel_callback(canvas, nullptr, EM_TRUE, RoR_OnBrowserWheel);
+    emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_TRUE, RoR_OnBrowserKey);
+    emscripten_set_keyup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, nullptr, EM_TRUE, RoR_OnBrowserKey);
+    LOG("[RoR|Startup|Input] Registered emscripten HTML5 input callbacks (mouse + keyboard).");
+#endif
+
     return true;
 }
 
