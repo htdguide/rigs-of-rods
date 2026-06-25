@@ -112,13 +112,15 @@ void GfxScene::Init()
 
     m_gfx_freebeams_grouping_node = m_scene_manager->getRootSceneNode()->createChildSceneNode("FreeBeam Visuals");
 
-    // NOTE(wasm): assigning a menu camera here (GetViewport()->setCamera) makes
-    // this scene manager render the screen viewport so the ImGui
-    // RenderQueueListener fires and ImGui DOES draw. Two follow-ups remain
-    // before enabling it: (1) the GLES2 scissor clips every ImGui draw to empty
-    // (OgreImGuiOverlay rsys->setScissorTest path) so the menu is invisible with
-    // scissor on / full-screen with it off; (2) intermittent first-frame stall.
-    // Left disabled so the build is stable (renders wallpaper). See wasm notes.
+#ifdef __EMSCRIPTEN__
+    // Give the screen viewport a camera so this scene manager renders it and the
+    // ImGui RenderQueueListener fires (the menu has no camera otherwise).
+    if (App::GetAppContext()->GetViewport() && !App::GetAppContext()->GetViewport()->getCamera())
+    {
+        Ogre::Camera* menu_cam = m_scene_manager->createCamera("RoR_MenuCamera");
+        App::GetAppContext()->GetViewport()->setCamera(menu_cam);
+    }
+#endif
 
     m_skidmark_conf.LoadDefaultSkidmarkDefs();
 }

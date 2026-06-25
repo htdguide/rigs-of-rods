@@ -24,6 +24,13 @@
 namespace Ogre
 {
 
+// Last viewport dimensions seen during rendering. NewFrame() runs at frame-start
+// (before any viewport is active), and on emscripten our custom render-queue
+// listener bypasses OverlayManager so its cached dims stay 0. Cache the real dims
+// here from _findVisibleObjects (which always receives a valid viewport).
+static int g_imgui_last_vp_w = 0;
+static int g_imgui_last_vp_h = 0;
+
 ImGuiOverlay::ImGuiOverlay() : Overlay("ImGuiOverlay")
 {
     ImGui::CreateContext();
@@ -51,6 +58,12 @@ void ImGuiOverlay::_findVisibleObjects(Camera* cam, RenderQueue* queue, Viewport
 {
     if (!mVisible)
         return;
+
+    if (vp)
+    {
+        g_imgui_last_vp_w = vp->getActualWidth();
+        g_imgui_last_vp_h = vp->getActualHeight();
+    }
 
     mRenderable._update();
     queue->addRenderable(&mRenderable, RENDER_QUEUE_OVERLAY, mZOrder * 100);
@@ -108,8 +121,11 @@ void ImGuiOverlay::ImGUIRenderable::createMaterial()
             fp->setSource(FP_SRC); fp->load();
         }
         mPass->setVertexProgram("ImGui/VP");
-        mPass->getVertexProgramParameters()->setNamedAutoConstant(
-            "worldViewProj", GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX);
+        // NOTE: 'worldViewProj' is intentionally NOT an auto-constant. Ogre only
+        // refreshes auto-constants inside its normal renderSingleObject() flow,
+        // which does not run for our manual _render() calls in preRender(). We
+        // therefore set this uniform by hand each frame (see preRender) from the
+        // renderable's ortho transform.
         mPass->setFragmentProgram("ImGui/FP");
         mPass->getFragmentProgramParameters()->setNamedConstant("tex", 0);
     }
@@ -183,7 +199,16 @@ void ImGuiOverlay::NewFrame(const FrameEvent& evt)
     OverlayManager& oMgr = OverlayManager::getSingleton();
 
     // Setup display size (every frame to accommodate for window resizing)
-    io.DisplaySize = ImVec2(oMgr.getViewportWidth(), oMgr.getViewportHeight());
+    float dispW = oMgr.getViewportWidth();
+    float dispH = oMgr.getViewportHeight();
+    if ((dispW <= 0 || dispH <= 0) && g_imgui_last_vp_w > 0 && g_imgui_last_vp_h > 0)
+    {
+        // OverlayManager dims unset (emscripten custom render-queue path) — use
+        // the dimensions cached from the previous frame's _findVisibleObjects.
+        dispW = g_imgui_last_vp_w;
+        dispH = g_imgui_last_vp_h;
+    }
+    io.DisplaySize = ImVec2(dispW, dispH);
 
     // Start the frame
     ImGui::NewFrame();
@@ -206,10 +231,20 @@ void ImGuiOverlay::ImGUIRenderable::_update()
     //     https://github.com/ocornut/imgui/blob/master/examples/directx9_example/imgui_impl_dx9.cpp#L127-L138
     float texelOffsetX = rSys->getHorizontalTexelOffset();
     float texelOffsetY = rSys->getVerticalTexelOffset();
+    // OverlayManager's cached dims are 0 on emscripten (our custom render-queue
+    // path bypasses it), which yields a degenerate ortho matrix that pushes all
+    // ImGui geometry offscreen. Fall back to the dims cached in _findVisibleObjects.
+    float vpW = oMgr.getViewportWidth();
+    float vpH = oMgr.getViewportHeight();
+    if ((vpW <= 0 || vpH <= 0) && g_imgui_last_vp_w > 0 && g_imgui_last_vp_h > 0)
+    {
+        vpW = g_imgui_last_vp_w;
+        vpH = g_imgui_last_vp_h;
+    }
     float L = texelOffsetX;
-    float R = oMgr.getViewportWidth() + texelOffsetX;
+    float R = vpW + texelOffsetX;
     float T = texelOffsetY;
-    float B = oMgr.getViewportHeight() + texelOffsetY;
+    float B = vpH + texelOffsetY;
 
     mXform = Matrix4(2.0f / (R - L), 0.0f, 0.0f, (L + R) / (L - R), 0.0f, -2.0f / (B - T), 0.0f,
                      (T + B) / (B - T), 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
@@ -227,7 +262,33 @@ bool ImGuiOverlay::ImGUIRenderable::preRender(SceneManager* sm, RenderSystem* rs
     int vpWidth = vp->getActualWidth();
     int vpHeight = vp->getActualHeight();
 
+
     TextureUnitState* tu = mMaterial->getBestTechnique()->getPass(0)->getTextureUnitState(0);
+
+#ifdef __EMSCRIPTEN__
+    // GLES2/WebGL2 has no fixed-function pipeline: geometry only rasterizes when
+    // a GPU program is bound. Ogre binds the pass program in the normal render
+    // path that runs *after* preRender(), so the manual _render() calls below
+    // would otherwise draw with no program (nothing on screen). Bind the pass
+    // explicitly here, and feed our ImGui GLSL ES vertex shader the ortho
+    // transform by hand (auto-constants are not refreshed for manual renders).
+    {
+        Pass* imgui_pass = mMaterial->getBestTechnique()->getPass(0);
+        GpuProgramParametersSharedPtr vparams = imgui_pass->getVertexProgramParameters();
+        GpuProgramParametersSharedPtr fparams = imgui_pass->getFragmentProgramParameters();
+        vparams->setNamedConstant("worldViewProj", mXform);
+        // _setPass binds the programs + render states, but the parameter upload
+        // (bindGpuProgramParameters) normally happens in _issueRenderOp's
+        // updateGpuProgramParameters() - which is skipped because our preRender
+        // returns false. Bind the program params explicitly so the vertex
+        // shader's transform and the fragment sampler are actually uploaded.
+        sm->_setPass(imgui_pass);
+        rsys->bindGpuProgram(imgui_pass->getVertexProgram()->_getBindingDelegate());
+        rsys->bindGpuProgramParameters(GPT_VERTEX_PROGRAM, vparams, (uint16)GPV_ALL);
+        rsys->bindGpuProgram(imgui_pass->getFragmentProgram()->_getBindingDelegate());
+        rsys->bindGpuProgramParameters(GPT_FRAGMENT_PROGRAM, fparams, (uint16)GPV_ALL);
+    }
+#endif
 
     for (int i = 0; i < draw_data->CmdListsCount; ++i)
     {

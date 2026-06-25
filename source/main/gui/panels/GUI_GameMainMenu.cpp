@@ -278,8 +278,14 @@ void GameMainMenu::DrawNoticeBox()
         ImGuiWindowFlags_NoInputs;
     if (ImGui::Begin(_LC("MainMenu", "Notice box"), nullptr, flags))
     {
-        ImGui::Image(reinterpret_cast<ImTextureID>(tex->getHandle()), ImVec2(16, 16));
-        ImGui::SameLine();
+        // The icon may be missing (e.g. 'accept.png' not bundled on the web
+        // build) - FetchIcon returns null in that case. Dereferencing it would
+        // crash, so only draw the image when the texture actually loaded.
+        if (tex)
+        {
+            ImGui::Image(reinterpret_cast<ImTextureID>(tex->getHandle()), ImVec2(16, 16));
+            ImGui::SameLine();
+        }
         ImGui::Text("%s", cache_ntc.c_str());
         ImGui::End();
     }
