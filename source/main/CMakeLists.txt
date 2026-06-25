@@ -303,6 +303,11 @@ if (EMSCRIPTEN)
         # Bundle RoR's base resources into MEMFS at /resources (where
         # SetUpResourcesDir looks). Generated into bin/resources at configure.
         "--preload-file=${CMAKE_BINARY_DIR}/bin/resources@/resources"
+        # Bundle a starter Single Player level + vehicle into /content (scanned by
+        # ContentManager as 'sys_process_dir/content'). TODO: make this modular —
+        # fetch packs on demand instead of preloading (see wasm notes).
+        "--preload-file=${CMAKE_SOURCE_DIR}/content/simple2-terrain@/content/simple2-terrain"
+        "--preload-file=${CMAKE_SOURCE_DIR}/content/dafsemi@/content/dafsemi"
         --shell-file ${CMAKE_SOURCE_DIR}/wasm/shell.html)
 endif ()
 

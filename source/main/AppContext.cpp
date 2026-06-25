@@ -187,6 +187,26 @@ static EM_BOOL RoR_OnBrowserKey(int eventType, const EmscriptenKeyboardEvent* e,
         io.AddInputCharacter((unsigned int)(unsigned char)e->key[0]);
     }
 
+    // Also feed RoR's InputEngine so in-game keybinds work (e.g. CTRL+G to spawn
+    // a vehicle, driving controls). InputEngine just records key state, which its
+    // per-frame Capture() turns into game events. Gate presses on the GUI not
+    // wanting the keyboard, but always forward releases so keys can't get stuck.
+    if (kc >= 0 && App::GetInputEngine())
+    {
+        OIS::KeyEvent ke(nullptr, (OIS::KeyCode)kc, 0);
+        if (down)
+        {
+            if (!io.WantCaptureKeyboard && !App::GetGuiManager()->IsGuiCaptureKeyboardRequested())
+            {
+                App::GetInputEngine()->ProcessKeyPress(ke);
+            }
+        }
+        else
+        {
+            App::GetInputEngine()->ProcessKeyRelease(ke);
+        }
+    }
+
     // Consume the event (prevent page scroll on arrows/space etc.) only when the
     // GUI actually wants the keyboard, so browser shortcuts still work otherwise.
     return io.WantCaptureKeyboard ? EM_TRUE : EM_FALSE;
