@@ -571,7 +571,14 @@ bool AppContext::SetUpRendering()
 
     // Create viewport (without camera)
     m_viewport = m_render_window->addViewport(/*camera=*/nullptr);
+#ifdef __EMSCRIPTEN__
+    // The Caelum sky system isn't supported on the web build (its .os script
+    // can't be parsed), so the sky is otherwise black. Use a flat sky-blue
+    // clear colour so in-game scenes have a horizon.
+    m_viewport->setBackgroundColour(Ogre::ColourValue(0.55f, 0.71f, 0.92f));
+#else
     m_viewport->setBackgroundColour(Ogre::ColourValue::Black);
+#endif
 
     return true;
 }

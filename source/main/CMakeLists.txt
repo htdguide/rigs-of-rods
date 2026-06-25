@@ -296,8 +296,10 @@ if (EMSCRIPTEN)
         -sINITIAL_MEMORY=1536MB -sMAXIMUM_MEMORY=1536MB
         -sSTACK_SIZE=4MB
         # Pre-spawn a worker pool for RoR's threadpool / physics / network
-        # threads (creating one while the main thread is blocked would deadlock).
-        -sPTHREAD_POOL_SIZE=16
+        # threads AND Ogre's terrain WorkQueue. Spawning a pthread while the main
+        # thread is blocked deadlocks, so the pool must be large enough to cover
+        # all of them at once (terrain load otherwise hangs at boot).
+        -sPTHREAD_POOL_SIZE=32
         -sFORCE_FILESYSTEM=1 -sEXIT_RUNTIME=0 -sASSERTIONS=1
         "-sEXPORTED_RUNTIME_METHODS=FS,callMain,PThread"
         # Bundle RoR's base resources into MEMFS at /resources (where

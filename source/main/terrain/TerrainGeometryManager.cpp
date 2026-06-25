@@ -134,6 +134,99 @@ Ogre::MaterialPtr Terrn2CustomMaterial::Profile::generate(const Ogre::Terrain* t
 
 // ----------------------------------------------------------------------------
 
+#ifdef __EMSCRIPTEN__
+// Ogre's built-in terrain material generator (TerrainPSSMMaterialGenerator)
+// emits SM2 shaders whose GLSL ES variant fails to even preprocess on WebGL2,
+// leaving the terrain blank/white. Generate a minimal, lit, single-texture
+// material instead and let the RTSS (already installed in GfxScene) produce the
+// GLSL ES shader from this fixed-function-style pass.
+class WasmTerrainMaterialGenerator : public Ogre::TerrainMaterialGenerator
+{
+public:
+    WasmTerrainMaterialGenerator()
+    {
+        // NOTE: intentionally NO layer-sampler declaration. Declaring one makes
+        // Ogre's Terrain load the layer textures on a background WorkQueue thread,
+        // but WebGL texture uploads must happen on the main thread (emscripten
+        // proxies them) - and the main thread is blocked inside the synchronous
+        // loadAllTerrains(), so it deadlocks. Without a declaration the terrain
+        // renders untextured (flat lit) but loads reliably. Texturing the terrain
+        // needs the layer textures loaded on the main thread instead (TODO).
+        mProfiles.push_back(OGRE_NEW Profile(this, "WasmSimple", "Simple lit GLES2 terrain"));
+        this->setActiveProfile("WasmSimple");
+    }
+
+    class Profile : public Ogre::TerrainMaterialGenerator::Profile
+    {
+    public:
+        Profile(Ogre::TerrainMaterialGenerator* parent, const Ogre::String& name, const Ogre::String& desc)
+            : Ogre::TerrainMaterialGenerator::Profile(parent, name, desc) {}
+        ~Profile() override {}
+
+        bool        isVertexCompressionSupported() const { return false; }
+        void        setLightmapEnabled(bool) {}
+        Ogre::uint8 getMaxLayers(const Ogre::Terrain*) const override { return 1; }
+        void        updateParams(const Ogre::MaterialPtr&, const Ogre::Terrain*) override {}
+        void        updateParamsForCompositeMap(const Ogre::MaterialPtr&, const Ogre::Terrain*) override {}
+
+        Ogre::MaterialPtr generateForCompositeMap(const Ogre::Terrain* terrain) override
+        {
+            return this->generate(terrain);
+        }
+
+        void requestOptions(Ogre::Terrain* terrain) override
+        {
+            terrain->_setMorphRequired(false);
+            terrain->_setNormalMapRequired(false);
+            terrain->_setLightMapRequired(false);
+            terrain->_setCompositeMapRequired(false);
+        }
+
+        Ogre::MaterialPtr generate(const Ogre::Terrain* terrain) override
+        {
+            const Ogre::String& matName = terrain->getMaterialName();
+            Ogre::MaterialManager& mm = Ogre::MaterialManager::getSingleton();
+            if (mm.getByName(matName))
+                mm.remove(matName);
+
+            Ogre::MaterialPtr mat = mm.create(matName, Ogre::RGN_DEFAULT);
+            Ogre::Pass* pass = mat->getTechnique(0)->getPass(0);
+            pass->setLightingEnabled(true);
+            pass->setAmbient(0.7f, 0.7f, 0.7f);
+            pass->setDiffuse(1.f, 1.f, 1.f, 1.f);
+            pass->setSpecular(0.f, 0.f, 0.f, 0.f);
+
+            // Sample the first terrain layer's diffuse texture, tiled across the
+            // terrain (Ogre generates a [0,1] terrain-space UV per vertex).
+            if (terrain->getLayerCount() > 0 &&
+                terrain->getLayerTextureName(0, 0) != Ogre::BLANKSTRING)
+            {
+                Ogre::TextureUnitState* tu = pass->createTextureUnitState(terrain->getLayerTextureName(0, 0));
+                tu->setTextureAddressingMode(Ogre::TextureUnitState::TAM_WRAP);
+                const Ogre::Real layer_sz = terrain->getLayerWorldSize(0);
+                if (layer_sz > 0.f)
+                {
+                    // Cap tiling: the stock layers tile hundreds of times across the
+                    // terrain, which without mipmaps aliases into a moire 'grid'.
+                    Ogre::Real tiling = terrain->getWorldSize() / layer_sz;
+                    tiling = std::min(tiling, 48.f);
+                    tu->setTextureScale(1.f / tiling, 1.f / tiling);
+                }
+            }
+            else
+            {
+                // No (loadable) layer texture - flat shaded ground colour so the
+                // terrain is at least visible/driveable.
+                pass->setAmbient(0.55f, 0.55f, 0.5f);
+                pass->setDiffuse(0.55f, 0.55f, 0.5f, 1.f);
+            }
+
+            return mat;
+        }
+    };
+};
+#endif // __EMSCRIPTEN__
+
 #define XZSTR(X,Z)   String("[") + TOSTRING(X) + String(",") + TOSTRING(Z) + String("]")
 
 TerrainGeometryManager::TerrainGeometryManager(Terrain* terrainManager)
@@ -434,8 +527,15 @@ void TerrainGeometryManager::configureTerrainDefaults()
     }
     else
     {
+#ifdef __EMSCRIPTEN__
+        // The SM2/PSSM generator's shaders don't work on WebGL2 - use a simple
+        // RTSS-backed material so the terrain actually renders.
+        terrainOptions->setDefaultMaterialGenerator(
+            Ogre::TerrainMaterialGeneratorPtr(new WasmTerrainMaterialGenerator()));
+#else
         terrainOptions->setDefaultMaterialGenerator(
             Ogre::TerrainMaterialGeneratorPtr(new Ogre::TerrainPSSMMaterialGenerator()));
+#endif
     }
     // Configure global
     terrainOptions->setMaxPixelError(m_spec->max_pixel_error);
