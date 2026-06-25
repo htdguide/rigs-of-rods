@@ -10,6 +10,8 @@
 #include <OgreRenderSystem.h>
 #include <OgreTextureManager.h>
 #include <OgreMaterialManager.h>
+#include <OgreHighLevelGpuProgramManager.h>
+#include <OgreGpuProgramParams.h>
 #include <OgreOverlayManager.h>
 #include <OgreFontManager.h>
 #include <OgreTechnique.h>
@@ -68,6 +70,50 @@ void ImGuiOverlay::ImGUIRenderable::createMaterial()
     TextureUnitState* mTexUnit = mPass->createTextureUnitState();
     mTexUnit->setTexture(mFontTex);
     mTexUnit->setTextureFiltering(TFO_NONE);
+
+#ifdef __EMSCRIPTEN__
+    // GLES2/WebGL2 has no fixed-function pipeline, so give the ImGui pass an
+    // explicit GLSL ES shader (textured + vertex colour, ortho projection from
+    // the renderable's world transform via worldviewproj_matrix).
+    {
+        auto& hmgr = HighLevelGpuProgramManager::getSingleton();
+        static const char* VP_SRC =
+            "#version 100\n"
+            "precision highp float;\n"
+            "uniform mat4 worldViewProj;\n"
+            "attribute vec4 vertex;\n"
+            "attribute vec4 uv0;\n"
+            "attribute vec4 colour;\n"
+            "varying vec2 outUV0;\n"
+            "varying vec4 outColour;\n"
+            "void main() {\n"
+            "  gl_Position = worldViewProj * vec4(vertex.xy, 0.0, 1.0);\n"
+            "  outUV0 = uv0.xy;\n"
+            "  outColour = colour;\n"
+            "}\n";
+        static const char* FP_SRC =
+            "#version 100\n"
+            "precision highp float;\n"
+            "uniform sampler2D tex;\n"
+            "varying vec2 outUV0;\n"
+            "varying vec4 outColour;\n"
+            "void main() {\n"
+            "  gl_FragColor = outColour * texture2D(tex, outUV0);\n"
+            "}\n";
+        if (!hmgr.getByName("ImGui/VP", RGN_INTERNAL))
+        {
+            auto vp = hmgr.createProgram("ImGui/VP", RGN_INTERNAL, "glsles", GPT_VERTEX_PROGRAM);
+            vp->setSource(VP_SRC); vp->load();
+            auto fp = hmgr.createProgram("ImGui/FP", RGN_INTERNAL, "glsles", GPT_FRAGMENT_PROGRAM);
+            fp->setSource(FP_SRC); fp->load();
+        }
+        mPass->setVertexProgram("ImGui/VP");
+        mPass->getVertexProgramParameters()->setNamedAutoConstant(
+            "worldViewProj", GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX);
+        mPass->setFragmentProgram("ImGui/FP");
+        mPass->getFragmentProgramParameters()->setNamedConstant("tex", 0);
+    }
+#endif
 
     mMaterial->load();
     mMaterial->setLightingEnabled(false);
