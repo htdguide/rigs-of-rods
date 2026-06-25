@@ -326,6 +326,26 @@ void ContentManager::InitModCache(CacheValidity validity)
 
 Ogre::DataStreamPtr ContentManager::resourceLoading(const Ogre::String& name, const Ogre::String& group, Ogre::Resource* resource)
 {
+#ifdef __EMSCRIPTEN__
+    // Cross-group fallback. Materials reference textures that live in a different
+    // resource group (e.g. character.material is in MaterialsRG but character.dds
+    // is in TexturesRG). Desktop Ogre resolves this; on the web build the texture
+    // lookup is scoped to the material's group and fails ("Cannot locate resource
+    // ... in resource group X" -> blank/black models). If the resource isn't in
+    // its declared group but exists in another, open it from there.
+    Ogre::ResourceGroupManager& rgm = Ogre::ResourceGroupManager::getSingleton();
+    if (!group.empty() &&
+        group != Ogre::ResourceGroupManager::AUTODETECT_RESOURCE_GROUP_NAME &&
+        !rgm.resourceExists(group, name) &&
+        rgm.resourceExistsInAnyGroup(name))
+    {
+        try
+        {
+            return rgm.openResource(name, rgm.findGroupContainingResource(name));
+        }
+        catch (const Ogre::Exception&) {}
+    }
+#endif
     return Ogre::DataStreamPtr();
 }
 
