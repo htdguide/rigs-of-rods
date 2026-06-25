@@ -289,6 +289,12 @@ void RoR::Terrain::initSkySubSystem()
     }
     else
     {
+#ifdef __EMSCRIPTEN__
+        // The skybox cubemap textures (e.g. cloudy_noon_*.dds) aren't bundled and
+        // Caelum isn't available on the web build, so an untextured skybox renders
+        // black. Disable it and rely on the viewport's sky-blue clear colour.
+        App::GetGfxScene()->GetSceneManager()->setSkyBox(false, "");
+#else
         if (!m_def->cubemap_config.empty())
         {
             // use custom
@@ -299,6 +305,7 @@ void RoR::Terrain::initSkySubSystem()
             // use default
             App::GetGfxScene()->GetSceneManager()->setSkyBox(true, "tracks/skyboxcol", 100, true);
         }
+#endif
     }
 }
 
