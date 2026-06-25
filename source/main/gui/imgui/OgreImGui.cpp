@@ -139,7 +139,7 @@ void OgreImGui::renderQueueStarted(Ogre::uint8 queueGroupId,
     if(queueGroupId == Ogre::RENDER_QUEUE_OVERLAY)
     {
         Ogre::Viewport* vp = Ogre::Root::getSingletonPtr()->getRenderSystem()->_getViewport();
-        if(vp != NULL)
+        if(vp != NULL && vp->getCamera() != NULL)
         {
             Ogre::SceneManager* sceneMgr = vp->getCamera()->getSceneManager();
             if (vp->getOverlaysEnabled() && sceneMgr->_getCurrentRenderStage() != Ogre::SceneManager::IRS_RENDER_TO_TEXTURE)

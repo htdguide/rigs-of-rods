@@ -112,17 +112,14 @@ void GfxScene::Init()
 
     m_gfx_freebeams_grouping_node = m_scene_manager->getRootSceneNode()->createChildSceneNode("FreeBeam Visuals");
 
-#ifdef __EMSCRIPTEN__
-    // The main-menu screen viewport has no camera (one is only assigned by the
-    // CameraManager in simulation), so this scene manager would never render it
-    // and the ImGui RenderQueueListener (registered on this SM) would never
-    // fire. Give the viewport a menu camera so the GUI draws over the wallpaper.
-    if (App::GetAppContext()->GetViewport() && !App::GetAppContext()->GetViewport()->getCamera())
-    {
-        Ogre::Camera* menu_cam = m_scene_manager->createCamera("RoR_MenuCamera");
-        App::GetAppContext()->GetViewport()->setCamera(menu_cam);
-    }
-#endif
+    // NOTE(wasm): the main-menu screen viewport has no camera (one is only
+    // assigned by the CameraManager in simulation), so this scene manager never
+    // renders it and the ImGui RenderQueueListener (registered on this SM) never
+    // fires -> the menu GUI is not drawn. Assigning a menu camera here DOES make
+    // ImGui render, but the first ImGui renderable render then hangs under
+    // emscripten (ImGUIRenderable::preRender -> ImGui::Render / rsys->_render).
+    // Left disabled until that render-path hang is resolved, so the build stays
+    // stable (renders the wallpaper). See wasm porting notes.
 
     m_skidmark_conf.LoadDefaultSkidmarkDefs();
 }
