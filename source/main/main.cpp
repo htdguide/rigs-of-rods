@@ -2206,7 +2206,26 @@ int main(int argc, char *argv[])
 #ifdef __EMSCRIPTEN__
             // Yield to the browser each frame so it composites the canvas and
             // pumps events; ASYNCIFY unwinds/rewinds the blocking loop here.
-            emscripten_sleep(0);
+            // Pace to ~60 FPS: emscripten_sleep(0) returns almost immediately, so
+            // the loop would otherwise run at hundreds of FPS - flooding
+            // renderOneFrame (visible flicker) and producing tiny, jittery frame
+            // dt's (animations/physics step erratically). Sleeping the remainder
+            // of a 16.6 ms budget gives one render per browser frame and a stable
+            // dt.
+            {
+                static double s_last_frame_ms = emscripten_get_now();
+                const double target_ms = 1000.0 / 60.0;
+                const double elapsed_ms = emscripten_get_now() - s_last_frame_ms;
+                if (elapsed_ms < target_ms)
+                {
+                    emscripten_sleep((unsigned int)(target_ms - elapsed_ms));
+                }
+                else
+                {
+                    emscripten_sleep(0); // already over budget - just yield
+                }
+                s_last_frame_ms = emscripten_get_now();
+            }
 #endif
         } // End of main rendering/input loop
 

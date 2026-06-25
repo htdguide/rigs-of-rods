@@ -143,18 +143,22 @@ Ogre::MaterialPtr Terrn2CustomMaterial::Profile::generate(const Ogre::Terrain* t
 class WasmTerrainMaterialGenerator : public Ogre::TerrainMaterialGenerator
 {
 public:
-    WasmTerrainMaterialGenerator()
+    // diffuseTex / layerWorldSize come from RoR's parsed .otc (the first layer).
+    // We DON'T declare Ogre terrain layer samplers: that makes the Terrain load
+    // the layer textures on a background WorkQueue thread, but WebGL texture
+    // uploads must run on the main thread (emscripten proxies them) and the main
+    // thread is blocked inside the synchronous loadAllTerrains() -> deadlock.
+    // Instead we reference the texture by name in the material below; it then
+    // loads lazily via the normal material/resource path on the main thread.
+    WasmTerrainMaterialGenerator(const std::string& diffuseTex, float layerWorldSize)
+        : m_diffuse_tex(diffuseTex), m_layer_world_size(layerWorldSize)
     {
-        // NOTE: intentionally NO layer-sampler declaration. Declaring one makes
-        // Ogre's Terrain load the layer textures on a background WorkQueue thread,
-        // but WebGL texture uploads must happen on the main thread (emscripten
-        // proxies them) - and the main thread is blocked inside the synchronous
-        // loadAllTerrains(), so it deadlocks. Without a declaration the terrain
-        // renders untextured (flat lit) but loads reliably. Texturing the terrain
-        // needs the layer textures loaded on the main thread instead (TODO).
         mProfiles.push_back(OGRE_NEW Profile(this, "WasmSimple", "Simple lit GLES2 terrain"));
         this->setActiveProfile("WasmSimple");
     }
+
+    std::string m_diffuse_tex;
+    float       m_layer_world_size = 0.f;
 
     class Profile : public Ogre::TerrainMaterialGenerator::Profile
     {
@@ -192,31 +196,33 @@ public:
             Ogre::MaterialPtr mat = mm.create(matName, Ogre::RGN_DEFAULT);
             Ogre::Pass* pass = mat->getTechnique(0)->getPass(0);
             pass->setLightingEnabled(true);
-            pass->setAmbient(0.7f, 0.7f, 0.7f);
+            pass->setAmbient(0.8f, 0.8f, 0.8f);
             pass->setDiffuse(1.f, 1.f, 1.f, 1.f);
             pass->setSpecular(0.f, 0.f, 0.f, 0.f);
 
-            // Sample the first terrain layer's diffuse texture, tiled across the
-            // terrain (Ogre generates a [0,1] terrain-space UV per vertex).
-            if (terrain->getLayerCount() > 0 &&
-                terrain->getLayerTextureName(0, 0) != Ogre::BLANKSTRING)
+            WasmTerrainMaterialGenerator* parent =
+                static_cast<WasmTerrainMaterialGenerator*>(this->getParent());
+
+            if (!parent->m_diffuse_tex.empty())
             {
-                Ogre::TextureUnitState* tu = pass->createTextureUnitState(terrain->getLayerTextureName(0, 0));
+                // Reference the layer's diffuse texture by name (loads lazily on
+                // the main thread). Ogre generates a [0,1] terrain-space UV per
+                // vertex, so scale it to tile the texture across the terrain.
+                Ogre::TextureUnitState* tu = pass->createTextureUnitState(parent->m_diffuse_tex);
                 tu->setTextureAddressingMode(Ogre::TextureUnitState::TAM_WRAP);
-                const Ogre::Real layer_sz = terrain->getLayerWorldSize(0);
-                if (layer_sz > 0.f)
+                if (parent->m_layer_world_size > 0.f)
                 {
-                    // Cap tiling: the stock layers tile hundreds of times across the
-                    // terrain, which without mipmaps aliases into a moire 'grid'.
-                    Ogre::Real tiling = terrain->getWorldSize() / layer_sz;
-                    tiling = std::min(tiling, 48.f);
+                    // Cap tiling so the (mip-less DXT) texture doesn't alias into a
+                    // moire pattern at grazing angles.
+                    Ogre::Real tiling = terrain->getWorldSize() / parent->m_layer_world_size;
+                    tiling = std::min(tiling, 64.f);
                     tu->setTextureScale(1.f / tiling, 1.f / tiling);
                 }
             }
             else
             {
-                // No (loadable) layer texture - flat shaded ground colour so the
-                // terrain is at least visible/driveable.
+                // No layer texture - flat shaded ground colour so the terrain is
+                // at least visible/driveable.
                 pass->setAmbient(0.55f, 0.55f, 0.5f);
                 pass->setDiffuse(0.55f, 0.55f, 0.5f, 1.f);
             }
@@ -529,9 +535,19 @@ void TerrainGeometryManager::configureTerrainDefaults()
     {
 #ifdef __EMSCRIPTEN__
         // The SM2/PSSM generator's shaders don't work on WebGL2 - use a simple
-        // RTSS-backed material so the terrain actually renders.
+        // RTSS-backed material so the terrain actually renders. Feed it the first
+        // layer's diffuse texture (from the parsed .otc) so it can be textured
+        // without Ogre's worker-thread layer loading (which deadlocks on WebGL).
+        std::string diffuse_tex;
+        float layer_world_size = 0.f;
+        if (!m_spec->pages.empty() && !m_spec->pages.begin()->layers.empty())
+        {
+            const RoR::OTCLayer& layer0 = m_spec->pages.begin()->layers.front();
+            diffuse_tex = layer0.diffusespecular_filename;
+            layer_world_size = layer0.world_size;
+        }
         terrainOptions->setDefaultMaterialGenerator(
-            Ogre::TerrainMaterialGeneratorPtr(new WasmTerrainMaterialGenerator()));
+            Ogre::TerrainMaterialGeneratorPtr(new WasmTerrainMaterialGenerator(diffuse_tex, layer_world_size)));
 #else
         terrainOptions->setDefaultMaterialGenerator(
             Ogre::TerrainMaterialGeneratorPtr(new Ogre::TerrainPSSMMaterialGenerator()));
