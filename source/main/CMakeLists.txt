@@ -292,14 +292,16 @@ if (EMSCRIPTEN)
         # so ASYNCIFY lets it yield to the browser each frame.
         -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576
         # Fixed (non-growing) shared heap — growth invalidates worker atomics
-        # under pthreads. RoR is heavy, so start large.
-        -sINITIAL_MEMORY=1536MB -sMAXIMUM_MEMORY=1536MB
+        # under pthreads. This whole block is allocated up-front, PER TAB, so
+        # keep it as small as RoR actually needs (every open tab costs this much
+        # real RAM; too many can hang the machine).
+        -sINITIAL_MEMORY=1024MB -sMAXIMUM_MEMORY=1024MB
         -sSTACK_SIZE=4MB
-        # Pre-spawn a worker pool for RoR's threadpool / physics / network
-        # threads AND Ogre's terrain WorkQueue. Spawning a pthread while the main
-        # thread is blocked deadlocks, so the pool must be large enough to cover
-        # all of them at once (terrain load otherwise hangs at boot).
-        -sPTHREAD_POOL_SIZE=32
+        # Pre-spawn a worker pool for RoR's thread pool / physics / network
+        # threads. Spawning a pthread while the main thread is blocked deadlocks,
+        # so pre-spawn enough to cover them. Ogre's WorkQueue runs inline (0
+        # workers) on the web build, so it needs none. RoR uses ~8.
+        -sPTHREAD_POOL_SIZE=12
         -sFORCE_FILESYSTEM=1 -sEXIT_RUNTIME=0 -sASSERTIONS=1
         "-sEXPORTED_RUNTIME_METHODS=FS,callMain,PThread"
         # Bundle RoR's base resources into MEMFS at /resources (where
