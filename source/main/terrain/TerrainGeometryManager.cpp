@@ -577,8 +577,18 @@ void TerrainGeometryManager::configureTerrainDefaults()
     defaultimp.maxBatchSize = m_spec->batch_size_max;
 
     // optimizations
+    // NOTE: the block below assumes the default generator is a
+    // TerrainPSSMMaterialGenerator (its active profile is an SM2Profile). On the
+    // web build we install WasmTerrainMaterialGenerator instead, so this cast
+    // would be invalid (calling SM2Profile methods through the wrong vtable hangs
+    // the terrain load). Skip the SM2-specific configuration there.
+#ifdef __EMSCRIPTEN__
+    const bool use_sm2_profile = false;
+#else
+    const bool use_sm2_profile = custom_mat.empty();
+#endif
     TerrainPSSMMaterialGenerator::SM2Profile* matProfile = nullptr;
-    if (custom_mat.empty())
+    if (use_sm2_profile)
     {
         matProfile = static_cast<TerrainPSSMMaterialGenerator::SM2Profile*>(terrainOptions->getDefaultMaterialGenerator()->getActiveProfile());
         if (matProfile)
@@ -609,7 +619,7 @@ void TerrainGeometryManager::configureTerrainDefaults()
     terrainOptions->setSkirtSize           (m_spec->skirt_size);
     terrainOptions->setLightMapSize        (m_spec->lightmap_size);
 
-    if (custom_mat.empty())
+    if (use_sm2_profile && matProfile)
     {
         if (matProfile->getReceiveDynamicShadowsPSSM())
         {

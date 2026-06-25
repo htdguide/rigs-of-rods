@@ -28,6 +28,7 @@
 #include <OgreParticleFXPlugin.h>
 #include <OgreOctreePlugin.h>
 #include <OgreSTBICodec.h>
+#include <OgreWorkQueue.h>
 // Browser input: there is no OIS backend on the web, so HTML5 DOM events are
 // fed straight into Dear ImGui's IO (see SetUpInput below).
 #include <emscripten/html5.h>
@@ -396,6 +397,20 @@ bool AppContext::SetUpRendering()
     std::string cfg_filepath = PathCombine(App::sys_config_dir->getStr(), "ogre.cfg");
     LOG(fmt::format("[RoR|Startup|Rendering] Creating OGRE renderer Root object, config='{}'", cfg_filepath));
     m_ogre_root = new Ogre::Root("", cfg_filepath, log_filepath);
+
+#ifdef __EMSCRIPTEN__
+    // Run Ogre's WorkQueue inline on the main thread (0 worker threads). The
+    // terrain loads its geometry/derived data through the WorkQueue; on a worker
+    // thread any GL-touching step is proxied back to the main thread, which is
+    // busy in the loading loop -> deadlock (terrain load hangs at ~40%). Inline
+    // processing avoids the cross-thread proxy entirely. Must be set before
+    // Root::initialise() starts the queue.
+    if (auto* wq = dynamic_cast<Ogre::DefaultWorkQueueBase*>(m_ogre_root->getWorkQueue()))
+    {
+        wq->setWorkerThreadCount(0);
+        LOG("[RoR|Startup|Rendering] Ogre WorkQueue set to 0 workers (run inline on emscripten).");
+    }
+#endif
 
 #ifdef __EMSCRIPTEN__
     // Static build: install the render system + plugins directly (no plugins.cfg).
