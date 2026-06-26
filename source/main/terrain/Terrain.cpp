@@ -286,7 +286,13 @@ void RoR::Terrain::initSkySubSystem()
     else
 #endif //USE_CAELUM
     // SkyX skies
+#ifndef __EMSCRIPTEN__
     if (App::gfx_sky_mode->getEnum<GfxSkyMode>() == GfxSkyMode::SKYX)
+#else
+    // SkyX relies on RTT + shaders unsupported on WebGL2; if the user selects it,
+    // fall through to the skybox/clear path instead of crashing.
+    if (false)
+#endif
     {
          // try to load SkyX config
          if (!m_def->skyx_config.empty() && ResourceGroupManager::getSingleton().resourceExistsInAnyGroup(m_def->skyx_config))

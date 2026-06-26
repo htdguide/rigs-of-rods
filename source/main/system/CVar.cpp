@@ -171,6 +171,15 @@ void Console::cVarSetupBuiltins()
     App::audio_force_obstruction_inside_vehicles   = this->cVarCreate("audio_force_obstruction_inside_vehicles",   "Force obstruction inside vehicles",     CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::audio_sim_pause_disables_doppler_effect   = this->cVarCreate("audio_sim_pause_disables_doppler_effect",   "Disable Doppler effect on sim pause",   CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "true");
 
+    // On the web build, default graphics settings to the lightest / most
+    // WebGL2-compatible values (perf + browser limits). These stay normal
+    // CVAR_ARCHIVE cvars so the Settings menu still exposes them and users
+    // can turn everything up.
+#ifdef __EMSCRIPTEN__
+#   define ROR_GFX_DEFAULT(web, desktop) web
+#else
+#   define ROR_GFX_DEFAULT(web, desktop) desktop
+#endif
     App::gfx_flares_mode         = this->cVarCreate("gfx_flares_mode",         "Lights",                     CVAR_ARCHIVE | CVAR_TYPE_INT,     "4"/*(int)GfxFlaresMode::ALL_VEHICLES_ALL_LIGHTS*/);
     App::gfx_polygon_mode        = this->cVarCreate("gfx_polygon_mode",        "Polygon mode",                              CVAR_TYPE_INT,     "1"/*(int)Ogre::PM_SOLID*/);
 #ifdef __EMSCRIPTEN__
@@ -182,12 +191,12 @@ void Console::cVarSetupBuiltins()
     App::gfx_shadow_type         = this->cVarCreate("gfx_shadow_type",         "Shadow technique",           CVAR_ARCHIVE | CVAR_TYPE_INT,     "1"/*(int)GfxShadowType::PSSM*/);
 #endif
     App::gfx_extcam_mode         = this->cVarCreate("gfx_extcam_mode",         "External Camera Mode",       CVAR_ARCHIVE | CVAR_TYPE_INT,     "2"/*(int)GfxExtCamMode::PITCHING*/);
-    App::gfx_sky_mode            = this->cVarCreate("gfx_sky_mode",            "Sky effects",                CVAR_ARCHIVE | CVAR_TYPE_INT,     "1"/*(int)GfxSkyMode::CAELUM*/);
-    App::gfx_texture_filter      = this->cVarCreate("gfx_texture_filter",      "Texture Filtering",          CVAR_ARCHIVE | CVAR_TYPE_INT,     "3"/*(int)GfxTexFilter::ANISOTROPIC*/);
-    App::gfx_vegetation_mode     = this->cVarCreate("gfx_vegetation_mode",     "Vegetation",                 CVAR_ARCHIVE | CVAR_TYPE_INT,     "3"/*(int)GfxVegetation::FULL*/);
+    App::gfx_sky_mode            = this->cVarCreate("gfx_sky_mode",            "Sky effects",                CVAR_ARCHIVE | CVAR_TYPE_INT,     ROR_GFX_DEFAULT("0"/*SANDSTORM, web: no Caelum/SkyX*/, "1"/*(int)GfxSkyMode::CAELUM*/));
+    App::gfx_texture_filter      = this->cVarCreate("gfx_texture_filter",      "Texture Filtering",          CVAR_ARCHIVE | CVAR_TYPE_INT,     ROR_GFX_DEFAULT("2"/*TRILINEAR, web: avoid aniso hang*/, "3"/*(int)GfxTexFilter::ANISOTROPIC*/));
+    App::gfx_vegetation_mode     = this->cVarCreate("gfx_vegetation_mode",     "Vegetation",                 CVAR_ARCHIVE | CVAR_TYPE_INT,     ROR_GFX_DEFAULT("0"/*NONE, web: no paged geometry*/, "3"/*(int)GfxVegetation::FULL*/));
     App::gfx_sky_time_cycle      = this->cVarCreate("gfx_sky_time_cycle",      "",                                          CVAR_TYPE_BOOL,    "false");
     App::gfx_sky_time_speed      = this->cVarCreate("gfx_sky_time_speed",      "",                                          CVAR_TYPE_INT,     "300");
-    App::gfx_water_mode          = this->cVarCreate("gfx_water_mode",          "Water effects",              CVAR_ARCHIVE | CVAR_TYPE_INT,     "3"/*(int)GfxWaterMode::FULL_FAST*/);
+    App::gfx_water_mode          = this->cVarCreate("gfx_water_mode",          "Water effects",              CVAR_ARCHIVE | CVAR_TYPE_INT,     ROR_GFX_DEFAULT("1"/*BASIC, web: no reflect/refract RTT*/, "3"/*(int)GfxWaterMode::FULL_FAST*/));
     App::gfx_anisotropy          = this->cVarCreate("gfx_anisotropy",          "Anisotropy",                 CVAR_ARCHIVE | CVAR_TYPE_INT,     "4");
     App::gfx_water_waves         = this->cVarCreate("gfx_water_waves",         "Waves",                      CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::gfx_particles_mode      = this->cVarCreate("gfx_particles_mode",      "Particles",                  CVAR_ARCHIVE | CVAR_TYPE_INT);
@@ -195,7 +204,7 @@ void Console::cVarSetupBuiltins()
     App::gfx_window_videocams    = this->cVarCreate("gfx_window_videocams",    "UseVideocameraWindows",      CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::gfx_surveymap_icons     = this->cVarCreate("gfx_surveymap_icons",     "Overview map icons",         CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "true");
     App::gfx_declutter_map       = this->cVarCreate("gfx_declutter_map",       "Declutter overview map",     CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "true");
-    App::gfx_envmap_enabled      = this->cVarCreate("gfx_envmap_enabled",      "Reflections",                CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "true");
+    App::gfx_envmap_enabled      = this->cVarCreate("gfx_envmap_enabled",      "Reflections",                CVAR_ARCHIVE | CVAR_TYPE_BOOL,    ROR_GFX_DEFAULT("false"/*web: skip env-map RTT*/, "true"));
     App::gfx_envmap_rate         = this->cVarCreate("gfx_envmap_rate",         "ReflectionUpdateRate",       CVAR_ARCHIVE | CVAR_TYPE_INT,     "1");
     App::gfx_shadow_quality      = this->cVarCreate("gfx_shadow_quality",      "Shadows Quality",            CVAR_ARCHIVE | CVAR_TYPE_INT,     "2");
     App::gfx_skidmarks_mode      = this->cVarCreate("gfx_skidmarks_mode",      "Skidmarks",                  CVAR_ARCHIVE | CVAR_TYPE_INT,     "0");
@@ -208,6 +217,7 @@ void Console::cVarSetupBuiltins()
     App::gfx_static_cam_fov_exp  = this->cVarCreate("gfx_static_cam_fov_exp",  "",                           CVAR_ARCHIVE | CVAR_TYPE_FLOAT,   "1.0");
     App::gfx_fixed_cam_tracking  = this->cVarCreate("gfx_fixed_cam_tracking",  "",                           CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::gfx_fps_limit           = this->cVarCreate("gfx_fps_limit",           "FPS-Limiter",                CVAR_ARCHIVE | CVAR_TYPE_INT,     "0");
+#undef ROR_GFX_DEFAULT
     App::gfx_speedo_imperial     = this->cVarCreate("gfx_speedo_imperial",     "gfx_speedo_imperial",        CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::gfx_flexbody_cache      = this->cVarCreate("gfx_flexbody_cache",      "Flexbody_UseCache",          CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::gfx_reduce_shadows      = this->cVarCreate("gfx_reduce_shadows",      "Shadow optimizations",       CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "true");
