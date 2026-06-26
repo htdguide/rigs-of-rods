@@ -230,7 +230,14 @@ bool RoR::Terrain::initialize()
 
 void RoR::Terrain::initCamera()
 {
+#ifdef __EMSCRIPTEN__
+    // Terrains set the viewport background to their ambient colour (white for
+    // simple2), which - with no working skybox/Caelum - gives a flat white sky.
+    // Use a sky-blue instead so there's a believable horizon.
+    App::GetCameraManager()->GetCamera()->getViewport()->setBackgroundColour(Ogre::ColourValue(0.55f, 0.71f, 0.92f));
+#else
     App::GetCameraManager()->GetCamera()->getViewport()->setBackgroundColour(m_def->ambient_color);
+#endif
     App::GetCameraManager()->GetCameraNode()->setPosition(m_def->start_position);
 
     if (App::gfx_sky_mode->getEnum<GfxSkyMode>() == GfxSkyMode::SKYX)
@@ -344,7 +351,12 @@ void RoR::Terrain::initFog()
     if (m_sight_range >= UNLIMITED_SIGHTRANGE)
         App::GetGfxScene()->GetSceneManager()->setFog(FOG_NONE);
     else
+#ifdef __EMSCRIPTEN__
+        // Fade distance to the sky-blue horizon, not the white ambient colour.
+        App::GetGfxScene()->GetSceneManager()->setFog(FOG_LINEAR, Ogre::ColourValue(0.55f, 0.71f, 0.92f), 0.000f, m_sight_range * 0.65f, m_sight_range*0.9);
+#else
         App::GetGfxScene()->GetSceneManager()->setFog(FOG_LINEAR, m_def->ambient_color, 0.000f, m_sight_range * 0.65f, m_sight_range*0.9);
+#endif
 }
 
 void RoR::Terrain::initVegetation()
