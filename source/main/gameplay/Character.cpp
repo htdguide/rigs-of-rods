@@ -578,16 +578,11 @@ GfxCharacter* Character::SetupGfx()
             mm.remove(char_mat);
         MaterialPtr cm = mm.create(char_mat, Ogre::RGN_DEFAULT);
         Ogre::Pass* cp = cm->getTechnique(0)->getPass(0);
-        cp->setLightingEnabled(true);
-        cp->setAmbient(0.9f, 0.85f, 0.8f);
-        cp->setDiffuse(0.9f, 0.85f, 0.8f, 1.f);
-        // NOTE: character.dds doesn't map onto this mesh's UVs through a simple
-        // material (samples black), and the managed material it normally uses has
-        // no GLES2 technique. Render the character as a clean flat figure for now
-        // via a manual texture-stage colour (RTSS honours colour ops).
-        Ogre::TextureUnitState* ctu = cp->createTextureUnitState();
-        ctu->setColourOperationEx(Ogre::LBX_SOURCE1, Ogre::LBS_MANUAL, Ogre::LBS_CURRENT,
-                                  Ogre::ColourValue(0.72f, 0.62f, 0.55f));
+        cp->setLightingEnabled(false);
+        // The character mesh's UVs are authored for male_char01_tex.jpg (its
+        // original "1-Default" material), NOT character.dds (the managed
+        // material's skin, which samples wrong here). Use the native skin.
+        cp->createTextureUnitState("male_char01_tex.jpg");
         entity->setMaterialName(char_mat);
         // The character.mesh sub-entities reference an (undefined) material named
         // "character"; force every sub-entity onto our material too.
