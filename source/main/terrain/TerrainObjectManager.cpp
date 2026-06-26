@@ -100,7 +100,26 @@ void GenerateGridAndPutToScene(Ogre::Vector3 position)
 
     Ogre::ManualObject* mo = new Ogre::ManualObject("ReferenceGrid");
 
+#ifdef __EMSCRIPTEN__
+    // The grid is drawn with per-vertex colours (grid_color -> white at the ends).
+    // Ogre's core "BaseWhiteNoLighting" relies on the fixed-function pipeline to
+    // modulate by vertex colour; on WebGL2 (no FFP) RTSS generates the shader and
+    // doesn't track vertex colour by default, so every line came out solid white.
+    // Use a dedicated material with vertex-colour tracking enabled so RTSS emits
+    // the intended colours.
+    const char* GRID_MAT = "RoRWasm/RefGrid";
+    Ogre::MaterialManager& gmm = Ogre::MaterialManager::getSingleton();
+    if (!gmm.getByName(GRID_MAT, Ogre::RGN_DEFAULT))
+    {
+        Ogre::MaterialPtr gm = gmm.create(GRID_MAT, Ogre::RGN_DEFAULT);
+        Ogre::Pass* gp = gm->getTechnique(0)->getPass(0);
+        gp->setLightingEnabled(false);
+        gp->setVertexColourTracking(Ogre::TVC_DIFFUSE);
+    }
+    mo->begin(GRID_MAT, Ogre::RenderOperation::OT_LINE_LIST);
+#else
     mo->begin("BaseWhiteNoLighting", Ogre::RenderOperation::OT_LINE_LIST);
+#endif
 
     const float step = 1.0f;
     const size_t count = 50;
