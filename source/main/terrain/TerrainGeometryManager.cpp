@@ -261,9 +261,16 @@ public:
             const Ogre::Real tiling = (parent->m_layer_world_size > 0.f)
                 ? (terrain->getWorldSize() / parent->m_layer_world_size) : 1.f;
 
-            // Preferred path: custom GLSL ES shader doing per-pixel normal-mapped
-            // lighting (diffuse + normalheight), for surface relief under the sun.
-            if (!parent->m_diffuse_tex.empty() && !parent->m_normal_tex.empty() && ensureNormalMapPrograms())
+            // The custom normal-map shader assumes a FLAT terrain (constant tangent
+            // frame). It's only valid when the terrain has no height variation; on a
+            // hilly terrain it would ignore the real per-vertex slope normals and
+            // mis-light everything. Detect flatness from the height range.
+            const bool terrain_is_flat =
+                (terrain->getMaxHeight() - terrain->getMinHeight()) < 1.0f;
+
+            // Preferred path (flat terrains only): custom GLSL ES shader doing
+            // per-pixel normal-mapped lighting (diffuse + normalheight).
+            if (terrain_is_flat && !parent->m_diffuse_tex.empty() && !parent->m_normal_tex.empty() && ensureNormalMapPrograms())
             {
                 pass->setVertexProgram("RoRWasm/TerrainNMVP");
                 pass->setFragmentProgram("RoRWasm/TerrainNMFP");

@@ -222,7 +222,16 @@ bool RoR::Terrain::initialize()
 
     LOG(" ===== LOADING TERRAIN ACTORS " + m_cache_entry->fname);
     loading_window->SetProgress(95, _L("Loading Terrain Actors"));
+#ifdef __EMSCRIPTEN__
+    // Terrain-predefined actors (e.g. North St Helens' monorail) are spawned here
+    // during the synchronous terrain load, before the render loop runs. Complex
+    // actors with a renderdash RTT can't render their dashboard texture without a
+    // frame and hang the load. Skip them on the web build - the player can still
+    // spawn vehicles manually after the terrain finishes loading.
+    LOG("[RoR|wasm] skipping terrain-predefined actors (would hang during sync load)");
+#else
     this->LoadPredefinedActors();
+#endif
 
     LOG(" ===== TERRAIN LOADING DONE " + m_cache_entry->fname);
 

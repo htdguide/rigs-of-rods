@@ -336,14 +336,33 @@ Ogre::DataStreamPtr ContentManager::resourceLoading(const Ogre::String& name, co
     Ogre::ResourceGroupManager& rgm = Ogre::ResourceGroupManager::getSingleton();
     if (!group.empty() &&
         group != Ogre::ResourceGroupManager::AUTODETECT_RESOURCE_GROUP_NAME &&
-        !rgm.resourceExists(group, name) &&
-        rgm.resourceExistsInAnyGroup(name))
+        !rgm.resourceExists(group, name))
     {
-        try
+        if (rgm.resourceExistsInAnyGroup(name))
         {
-            return rgm.openResource(name, rgm.findGroupContainingResource(name));
+            try
+            {
+                return rgm.openResource(name, rgm.findGroupContainingResource(name));
+            }
+            catch (const Ogre::Exception&) {}
         }
-        catch (const Ogre::Exception&) {}
+
+        // Case-insensitive retry. Many mods reference a texture with different
+        // casing than the actual file (e.g. material wants 'a1da0UID-chapel.dds'
+        // but the zip has 'a1da0uid-chapel.dds'). This works on Windows' case-
+        // insensitive filesystem but fails on the case-sensitive web FS -> blank/
+        // black objects. Try a lower-cased name (covers the common case of upper-
+        // case references to lower-case files).
+        Ogre::String lname = name;
+        Ogre::StringUtil::toLowerCase(lname);
+        if (lname != name && rgm.resourceExistsInAnyGroup(lname))
+        {
+            try
+            {
+                return rgm.openResource(lname, rgm.findGroupContainingResource(lname));
+            }
+            catch (const Ogre::Exception&) {}
+        }
     }
 #endif
     return Ogre::DataStreamPtr();
