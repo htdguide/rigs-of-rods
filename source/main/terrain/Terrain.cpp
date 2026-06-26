@@ -303,10 +303,40 @@ void RoR::Terrain::initSkySubSystem()
     else
     {
 #ifdef __EMSCRIPTEN__
-        // The skybox cubemap textures (e.g. cloudy_noon_*.dds) aren't bundled and
-        // Caelum isn't available on the web build, so an untextured skybox renders
-        // black. Disable it and rely on the viewport's sky-blue clear colour.
-        App::GetGfxScene()->GetSceneManager()->setSkyBox(false, "");
+        // Caelum/SkyX aren't available on the web build, and the terrain's
+        // configured SandStorm cubemap (tracks/skyboxcol) isn't bundled. Build a
+        // skybox from the generic JPG cube faces that ship in cubemaps.zip instead
+        // of a flat clear colour - JPG uploads fine on WebGL2 (no BGRA). We create
+        // the material in code (rather than reuse cubemaps.material's
+        // Examples/*SkyBox) because Ogre's cubic_texture derives lower-case face
+        // suffixes (early_morning_fr.jpg) but the bundled faces are upper-case
+        // (early_morning_FR.jpg) - a mismatch on the case-sensitive web FS.
+        try
+        {
+            const char* SKY_MAT = "RoRWasm/SkyBox";
+            Ogre::MaterialManager& mm = Ogre::MaterialManager::getSingleton();
+            if (!mm.getByName(SKY_MAT, Ogre::RGN_DEFAULT))
+            {
+                Ogre::MaterialPtr sky = mm.create(SKY_MAT, Ogre::RGN_DEFAULT);
+                Ogre::Pass* sp = sky->getTechnique(0)->getPass(0);
+                sp->setLightingEnabled(false);
+                sp->setDepthWriteEnabled(false);
+                Ogre::TextureUnitState* stu = sp->createTextureUnitState();
+                // separateUV order: front, back, left, right, up, down.
+                const Ogre::String faces[6] = {
+                    "early_morning_FR.jpg", "early_morning_BK.jpg",
+                    "early_morning_LF.jpg", "early_morning_RT.jpg",
+                    "early_morning_UP.jpg", "early_morning_DN.jpg" };
+                stu->setCubicTextureName(faces, false);
+                stu->setTextureAddressingMode(Ogre::TextureUnitState::TAM_CLAMP);
+            }
+            App::GetGfxScene()->GetSceneManager()->setSkyBox(true, SKY_MAT, 500, true);
+        }
+        catch (Ogre::Exception& e)
+        {
+            RoR::LogFormat("[RoR|wasm] skybox setup failed (%s), falling back to clear colour", e.getFullDescription().c_str());
+            App::GetGfxScene()->GetSceneManager()->setSkyBox(false, "");
+        }
 #else
         if (!m_def->cubemap_config.empty())
         {

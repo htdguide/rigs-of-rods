@@ -440,6 +440,12 @@ void ContentManager::LoadGameplayResources()
         this->AddResourcePack(ContentManager::ResourcePack::MESHES);
         this->AddResourcePack(ContentManager::ResourcePack::OVERLAYS);
         this->AddResourcePack(ContentManager::ResourcePack::PARTICLES);
+#ifdef __EMSCRIPTEN__
+        // Caelum/SkyX are unavailable on the web build; mount the generic JPG cube
+        // skyboxes (cubemaps.zip) so Terrain::initSkySubSystem can use one instead
+        // of a flat clear colour. (Desktop adds this pack elsewhere as needed.)
+        this->AddResourcePack(ContentManager::ResourcePack::CUBEMAPS);
+#endif
 
         m_base_resource_loaded = true;
     }
