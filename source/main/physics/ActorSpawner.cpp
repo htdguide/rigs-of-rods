@@ -2499,6 +2499,15 @@ void ActorSpawner::ProcessManagedMaterial(RigDef::ManagedMaterial & def)
     //   def.damaged_diffuse_map   ~~   tuneup.media[2]
     // ==========================================================================
 
+#ifdef __EMSCRIPTEN__
+    // The damage-blend managed materials mix the clean + damaged skins with an
+    // FFP multitexture blend (colour_op_ex blend_diffuse_alpha) that RTSS doesn't
+    // reproduce correctly on WebGL2 - the car shows the damaged skin (scratches,
+    // smashed lights) even when undamaged. Drop the damage map so the plain
+    // (clean-skin) managed material variant is used instead.
+    def.damaged_diffuse_map = "";
+#endif
+
     if (m_managed_materials.find(def.name) != m_managed_materials.end())
     {
         this->AddMessage(Message::TYPE_ERROR, "Duplicate managed material name: '" + def.name + "'. Ignoring definition...");
