@@ -212,10 +212,10 @@ public:
                 tu->setTextureAddressingMode(Ogre::TextureUnitState::TAM_WRAP);
                 if (parent->m_layer_world_size > 0.f)
                 {
-                    // Cap tiling so the (mip-less DXT) texture doesn't alias into a
-                    // moire pattern at grazing angles.
-                    Ogre::Real tiling = terrain->getWorldSize() / parent->m_layer_world_size;
-                    tiling = std::min(tiling, 64.f);
+                    // Tile the texture once per layer world-size, exactly like the
+                    // stock terrain (Ogre generates a [0,1] terrain-space UV). The
+                    // layer DDS ships mipmaps, so the fine tiling doesn't alias.
+                    const Ogre::Real tiling = terrain->getWorldSize() / parent->m_layer_world_size;
                     tu->setTextureScale(1.f / tiling, 1.f / tiling);
                 }
             }
