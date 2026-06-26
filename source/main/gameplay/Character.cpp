@@ -566,9 +566,39 @@ GfxCharacter* Character::SetupGfx()
     scenenode->setVisible(false);
 
     // setup colour
+#ifdef __EMSCRIPTEN__
+    // The managed character material (tracks/character) has no supportable
+    // technique on GLES2 (its shadow/managed base fails), so it renders blank
+    // (dark). Use a simple lit, textured material instead - single pass, so the
+    // multiplayer colour-tint code (which needs pass 1) just skips it.
+    {
+        const Ogre::String char_mat = "tracks/" + m_instance_name;
+        Ogre::MaterialManager& mm = MaterialManager::getSingleton();
+        if (mm.getByName(char_mat))
+            mm.remove(char_mat);
+        MaterialPtr cm = mm.create(char_mat, Ogre::RGN_DEFAULT);
+        Ogre::Pass* cp = cm->getTechnique(0)->getPass(0);
+        cp->setLightingEnabled(true);
+        cp->setAmbient(0.9f, 0.85f, 0.8f);
+        cp->setDiffuse(0.9f, 0.85f, 0.8f, 1.f);
+        // NOTE: character.dds doesn't map onto this mesh's UVs through a simple
+        // material (samples black), and the managed material it normally uses has
+        // no GLES2 technique. Render the character as a clean flat figure for now
+        // via a manual texture-stage colour (RTSS honours colour ops).
+        Ogre::TextureUnitState* ctu = cp->createTextureUnitState();
+        ctu->setColourOperationEx(Ogre::LBX_SOURCE1, Ogre::LBS_MANUAL, Ogre::LBS_CURRENT,
+                                  Ogre::ColourValue(0.72f, 0.62f, 0.55f));
+        entity->setMaterialName(char_mat);
+        // The character.mesh sub-entities reference an (undefined) material named
+        // "character"; force every sub-entity onto our material too.
+        for (unsigned i = 0; i < entity->getNumSubEntities(); ++i)
+            entity->getSubEntity(i)->setMaterialName(char_mat);
+    }
+#else
     MaterialPtr mat1 = MaterialManager::getSingleton().getByName("tracks/character");
     MaterialPtr mat2 = mat1->clone("tracks/" + m_instance_name);
     entity->setMaterialName("tracks/" + m_instance_name);
+#endif
 
     m_gfx_character = new GfxCharacter();
     m_gfx_character->xc_scenenode = scenenode;
