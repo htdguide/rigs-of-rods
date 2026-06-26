@@ -579,10 +579,10 @@ GfxCharacter* Character::SetupGfx()
         MaterialPtr cm = mm.create(char_mat, Ogre::RGN_DEFAULT);
         Ogre::Pass* cp = cm->getTechnique(0)->getPass(0);
         cp->setLightingEnabled(false);
-        // The character mesh's UVs are authored for male_char01_tex.jpg (its
-        // original "1-Default" material), NOT character.dds (the managed
-        // material's skin, which samples wrong here). Use the native skin.
-        cp->createTextureUnitState("male_char01_tex.jpg");
+        // Original character skin (the managed material's diffuse_tex). It loads
+        // correctly now that BGRA (X8R8G8B8) textures are converted to RGBA on
+        // the web build.
+        cp->createTextureUnitState("character.dds");
         entity->setMaterialName(char_mat);
         // The character.mesh sub-entities reference an (undefined) material named
         // "character"; force every sub-entity onto our material too.
