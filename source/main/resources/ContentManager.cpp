@@ -403,6 +403,10 @@ void ContentManager::InitManagedMaterials(std::string const & rg_name)
     Ogre::String managed_materials_dir = PathCombine(App::sys_resources_dir->getStr(), "managed_materials");
 
     //Dirty, needs to be improved
+    // NOTE(wasm): gfx_shadow_type defaults to NONE on emscripten (PSSM shaders
+    // don't run on WebGL2), so this takes the 'off' base - an empty
+    // Shadows/managed/base_receiver - which lets managed materials keep a valid
+    // technique instead of rendering blank.
     if (App::gfx_shadow_type->getEnum<GfxShadowType>() == GfxShadowType::PSSM)
     {
         if (rg_name == RGN_MANAGED_MATS) // Only load shared resources on startup
