@@ -222,7 +222,15 @@ void Console::cVarSetupBuiltins()
     App::gfx_flexbody_cache      = this->cVarCreate("gfx_flexbody_cache",      "Flexbody_UseCache",          CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::gfx_reduce_shadows      = this->cVarCreate("gfx_reduce_shadows",      "Shadow optimizations",       CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "true");
     App::gfx_enable_rtshaders    = this->cVarCreate("gfx_enable_rtshaders",    "Use RTShader System",        CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
+#ifdef __EMSCRIPTEN__
+    // Default ON for the web build: the standard vehicle materials are the
+    // "nicemetal" managed materials, which use Cg/asm reflection shaders that don't
+    // compile on WebGL2 (no supportable technique -> blank white vehicle paint).
+    // The alternate materials are plain managed materials that RTSS can shade.
+    App::gfx_alt_actor_materials = this->cVarCreate("gfx_alt_actor_materials", "Use alternate vehicle materials", CVAR_ARCHIVE | CVAR_TYPE_BOOL, "true");
+#else
     App::gfx_alt_actor_materials = this->cVarCreate("gfx_alt_actor_materials", "Use alternate vehicle materials", CVAR_ARCHIVE | CVAR_TYPE_BOOL, "false");
+#endif
     App::gfx_auto_lod            = this->cVarCreate("gfx_auto_lod",            "Use OGREs Automatic Mesh LOD Generator", CVAR_ARCHIVE | CVAR_TYPE_BOOL, "true");
 
     App::flexbody_defrag_enabled           = this->cVarCreate("flexbody_defrag_enabled",           "", CVAR_TYPE_BOOL);
