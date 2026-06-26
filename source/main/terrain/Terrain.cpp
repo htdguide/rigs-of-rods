@@ -45,6 +45,10 @@
 #include <Terrain/OgreTerrainPaging.h>
 #include <Terrain/OgreTerrainGroup.h>
 
+#ifdef __EMSCRIPTEN__
+#include <OgreRTShaderSystem.h>
+#endif
+
 #include <algorithm>
 
 using namespace RoR;
@@ -384,15 +388,38 @@ void RoR::Terrain::initLight()
 
 void RoR::Terrain::initFog()
 {
+#ifdef __EMSCRIPTEN__
+    {
+        // NOTE: the desktop default sight range is 5000 == "unlimited" (>= 4999),
+        // which on desktop means NO fog. On the web we always want some atmospheric
+        // haze, so apply fog here unconditionally (don't gate on the sight range).
+        //
+        // Fade distance to a light warm-grey that matches the skybox horizon band,
+        // so the far terrain dissolves into the cube skybox instead of ending in a
+        // hard edge. Fixed metre distances (the terrain's world_size isn't populated
+        // yet at initFog time - getMaxTerrainSize() returns 0 here) tuned so the near
+        // ground stays clear and the far ground hazes out across a ~1km terrain.
+        const float fog_start = 300.f;
+        const float fog_end   = 1500.f;
+        App::GetGfxScene()->GetSceneManager()->setFog(FOG_LINEAR, Ogre::ColourValue(0.70f, 0.68f, 0.64f), 0.000f, fog_start, fog_end);
+
+        // RTSS bakes the fog stage into each generated shader at build time based
+        // on the scene fog mode. The terrain/character/etc. shaders were generated
+        // earlier while fog was FOG_NONE, so they have no fog code and ignore the
+        // setFog above. Invalidate the scheme so every shader regenerates with the
+        // fog stage now that linear fog is active.
+        if (Ogre::RTShader::ShaderGenerator::getSingletonPtr())
+        {
+            Ogre::RTShader::ShaderGenerator::getSingleton().invalidateScheme(
+                Ogre::RTShader::ShaderGenerator::DEFAULT_SCHEME_NAME);
+        }
+        return;
+    }
+#endif
     if (m_sight_range >= UNLIMITED_SIGHTRANGE)
         App::GetGfxScene()->GetSceneManager()->setFog(FOG_NONE);
     else
-#ifdef __EMSCRIPTEN__
-        // Fade distance to the sky-blue horizon, not the white ambient colour.
-        App::GetGfxScene()->GetSceneManager()->setFog(FOG_LINEAR, Ogre::ColourValue(0.55f, 0.71f, 0.92f), 0.000f, m_sight_range * 0.65f, m_sight_range*0.9);
-#else
         App::GetGfxScene()->GetSceneManager()->setFog(FOG_LINEAR, m_def->ambient_color, 0.000f, m_sight_range * 0.65f, m_sight_range*0.9);
-#endif
 }
 
 void RoR::Terrain::initVegetation()
