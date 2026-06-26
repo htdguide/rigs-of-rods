@@ -57,6 +57,17 @@ int ShadowManager::updateShadowTechnique()
     App::GetGfxScene()->GetSceneManager()->setShadowColour(Ogre::ColourValue(0.563 + scoef, 0.578 + scoef, 0.625 + scoef));
     App::GetGfxScene()->GetSceneManager()->setShowDebugShadows(false);
 
+#ifdef __EMSCRIPTEN__
+    // PSSM on the web build isn't supported yet: it needs PF_FLOAT32_R shadow
+    // maps, a GLES2 depth-caster shader and the managed-material receiver shaders
+    // (Cg) that don't compile on WebGL2, and processPSSM() writes the shared
+    // 'pssm_params' which would throw. The shadow cvar stays user-settable (so the
+    // option isn't hidden), but force the technique off here so toggling it just
+    // degrades to no shadows instead of crashing.
+    App::GetGfxScene()->GetSceneManager()->setShadowTechnique(Ogre::SHADOWTYPE_NONE);
+    return 0;
+#endif
+
     if (App::gfx_shadow_type->getEnum<GfxShadowType>() == GfxShadowType::PSSM)
     {
         processPSSM();
