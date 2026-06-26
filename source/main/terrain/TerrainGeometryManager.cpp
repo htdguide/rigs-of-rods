@@ -195,10 +195,11 @@ public:
 
             Ogre::MaterialPtr mat = mm.create(matName, Ogre::RGN_DEFAULT);
             Ogre::Pass* pass = mat->getTechnique(0)->getPass(0);
-            // Unlit: the stock web terrain is flat, so the single directional
-            // light only darkened the ground (and exaggerated tile-edge seams).
-            // Showing the diffuse texture at full brightness looks better.
-            pass->setLightingEnabled(false);
+            // Lit by the sun + scene ambient (RTSS generates the GLSL ES shader).
+            pass->setLightingEnabled(true);
+            pass->setAmbient(1.f, 1.f, 1.f);
+            pass->setDiffuse(1.f, 1.f, 1.f, 1.f);
+            pass->setSpecular(0.f, 0.f, 0.f, 0.f);
 
             WasmTerrainMaterialGenerator* parent =
                 static_cast<WasmTerrainMaterialGenerator*>(this->getParent());

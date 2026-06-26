@@ -578,7 +578,9 @@ GfxCharacter* Character::SetupGfx()
             mm.remove(char_mat);
         MaterialPtr cm = mm.create(char_mat, Ogre::RGN_DEFAULT);
         Ogre::Pass* cp = cm->getTechnique(0)->getPass(0);
-        cp->setLightingEnabled(false);
+        cp->setLightingEnabled(true); // lit by the sun + scene ambient (via RTSS)
+        cp->setAmbient(1.f, 1.f, 1.f);
+        cp->setDiffuse(1.f, 1.f, 1.f, 1.f);
         // Original character skin (the managed material's diffuse_tex). It loads
         // correctly now that BGRA (X8R8G8B8) textures are converted to RGBA on
         // the web build.

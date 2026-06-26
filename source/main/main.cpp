@@ -991,7 +991,15 @@ int main(int argc, char *argv[])
                             }
                             else
                             {
+#ifdef __EMSCRIPTEN__
+                                // No Caelum/SkyX on the web build to add sky light,
+                                // so the low 0.3 ambient (which assumes a dynamic
+                                // sky supplements it) leaves lit surfaces too dark.
+                                // Use a brighter ambient like the sandstorm path.
+                                App::GetGfxScene()->GetSceneManager()->setAmbientLight(Ogre::ColourValue(0.7f, 0.7f, 0.7f));
+#else
                                 App::GetGfxScene()->GetSceneManager()->setAmbientLight(Ogre::ColourValue(0.3f, 0.3f, 0.3f));
+#endif
                             }
                             App::GetDiscordRpc()->UpdatePresence();
                             App::sim_state->setVal((int)SimState::RUNNING);
