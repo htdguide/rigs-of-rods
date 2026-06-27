@@ -285,6 +285,15 @@ add_executable(${BINNAME} ${SOURCE_FILES})
 if (EMSCRIPTEN)
     # Emit a full HTML shell (RoR.html + .js + .wasm).
     set_target_properties(${BINNAME} PROPERTIES SUFFIX ".html")
+    # Optional extra content packs (terrains/vehicles) - bundled into /content only
+    # when present, so a clean checkout still builds with just the base content.
+    set(ROR_WASM_EXTRA_PRELOADS "")
+    foreach(pack nhelens.zip ChevyS1023.zip)
+        if (EXISTS "${CMAKE_SOURCE_DIR}/content/${pack}")
+            list(APPEND ROR_WASM_EXTRA_PRELOADS
+                "--preload-file=${CMAKE_SOURCE_DIR}/content/${pack}@/content/${pack}")
+        endif ()
+    endforeach ()
     target_link_options(${BINNAME} PRIVATE
         # WebGL2 / full GLES3 entry points for the Ogre GLES2 render system.
         -sFULL_ES3 -sMAX_WEBGL_VERSION=2 -sMIN_WEBGL_VERSION=2
@@ -312,6 +321,7 @@ if (EMSCRIPTEN)
         # fetch packs on demand instead of preloading (see wasm notes).
         "--preload-file=${CMAKE_SOURCE_DIR}/content/simple2-terrain@/content/simple2-terrain"
         "--preload-file=${CMAKE_SOURCE_DIR}/content/dafsemi@/content/dafsemi"
+        ${ROR_WASM_EXTRA_PRELOADS}
         --shell-file ${CMAKE_SOURCE_DIR}/wasm/shell.html)
 endif ()
 
