@@ -171,11 +171,17 @@ void GfxScene::UpdateScene(float dt)
 
     // Realtime reflections on player vehicle
     // IMPORTANT: Toggles visibility of all meshes -> must be done before any other visibility control is evaluated (i.e. aero propellers)
+#ifndef __EMSCRIPTEN__
+    // WebGL2 has no working cube-map render target -> skip the per-frame dynamic
+    // reflection render (vehicles use a static environment cube on web instead).
+    // NOTE: SetupEnvMap() itself stays called on web (removing it crashes the
+    // managed-material/actor setup) - only this per-frame RTT render is skipped.
     if (player_gfx_actor != nullptr)
     {
         // Safe to be called here, only modifies OGRE objects, doesn't read any physics state.
         m_envmap.UpdateEnvMap(player_gfx_actor->GetSimDataBuffer().simbuf_pos, player_gfx_actor);
     }
+#endif
 
     // Terrain - animated meshes and paged geometry
     App::GetGameContext()->GetTerrain()->getObjectManager()->UpdateTerrainObjects(dt);

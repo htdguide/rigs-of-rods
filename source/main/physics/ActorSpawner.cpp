@@ -2705,7 +2705,50 @@ void ActorSpawner::ProcessManagedMaterial(RigDef::ManagedMaterial & def)
         }
     }
 
-    if (!TuneupUtil::isManagedMatAnyhowRemoved(m_actor->getWorkingTuneupDef(), def.name) 
+#ifdef __EMSCRIPTEN__
+    // Metallic reflection on the web: the desktop "nicemetal" path needs Cg shaders
+    // and a dynamic cube-map RTT, neither of which exists on WebGL2. Instead reflect a
+    // static environment cube (the skybox faces) onto the painted body, mirroring the
+    // nicemetal design with a dedicated additive reflection pass. Letting the
+    // RTShaderSystem generate the GLES2 env-reflection (TEXCALC_ENVIRONMENT_MAP_REFLECTION)
+    // in its OWN pass keeps a single sampler per shader - putting the samplerCube in the
+    // same pass as the 2D diffuse makes GLES2 alias both to texture unit 0 ("two textures
+    // of different types use the same sampler location"), so the reflection never shows.
+    if (App::gfx_envmap_enabled->getBool() && material
+        && !TuneupUtil::isManagedMatAnyhowRemoved(m_actor->getWorkingTuneupDef(), def.name)
+        && (def.type == RigDef::ManagedMaterialType::FLEXMESH_STANDARD
+            || def.type == RigDef::ManagedMaterialType::FLEXMESH_TRANSPARENT
+            || def.type == RigDef::ManagedMaterialType::MESH_STANDARD
+            || def.type == RigDef::ManagedMaterialType::MESH_TRANSPARENT))
+    {
+        Ogre::Technique* tech = material->getTechnique("BaseTechnique");
+        bool already = false;
+        for (unsigned short p = 0; tech && p < tech->getNumPasses(); ++p)
+            already |= (tech->getPass(p)->getName() == "WasmEnvReflect");
+        if (tech && !already)
+        {
+            Ogre::Pass* refl = tech->createPass();
+            refl->setName("WasmEnvReflect");
+            refl->setLightingEnabled(false);
+            refl->setDepthWriteEnabled(false);      // body already wrote depth
+            refl->setSceneBlending(Ogre::SBT_ADD);  // add reflection over the painted body
+            Ogre::TextureUnitState* env = refl->createTextureUnitState();
+            // Real cube map (forUVW=true) -> samplerCube on WebGL2. Same faces as the skybox.
+            const Ogre::String faces[6] = {
+                "early_morning_FR.jpg", "early_morning_BK.jpg",
+                "early_morning_LF.jpg", "early_morning_RT.jpg",
+                "early_morning_UP.jpg", "early_morning_DN.jpg" };
+            env->setCubicTextureName(faces, true);
+            env->setTextureAddressingMode(Ogre::TextureUnitState::TAM_CLAMP);
+            env->setEnvironmentMap(true, Ogre::TextureUnitState::ENV_REFLECTION);
+            // Scale the reflection down so it's a metallic sheen, not a mirror: output = cube * 0.35.
+            env->setColourOperationEx(Ogre::LBX_MODULATE, Ogre::LBS_TEXTURE, Ogre::LBS_MANUAL,
+                                      Ogre::ColourValue::White, Ogre::ColourValue(0.35f, 0.35f, 0.35f));
+        }
+    }
+#endif
+
+    if (!TuneupUtil::isManagedMatAnyhowRemoved(m_actor->getWorkingTuneupDef(), def.name)
         && def.type != RigDef::ManagedMaterialType::INVALID)
     {
         if (def.options.double_sided)
