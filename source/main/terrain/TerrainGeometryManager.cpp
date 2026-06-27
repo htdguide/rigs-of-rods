@@ -140,26 +140,40 @@ Ogre::MaterialPtr Terrn2CustomMaterial::Profile::generate(const Ogre::Terrain* t
 // leaving the terrain blank/white. Generate a minimal, lit, single-texture
 // material instead and let the RTSS (already installed in GfxScene) produce the
 // GLSL ES shader from this fixed-function-style pass.
+struct WasmTerrainLayer
+{
+    std::string diffuse;     // diffuse_specular texture filename
+    std::string blendmap;    // blendmap image filename (empty for layer 0)
+    float       world_size = 1.f;
+    float       alpha = 1.f;
+    char        blend_mode = 'R'; // which channel of the blendmap carries this layer's coverage
+};
+
 class WasmTerrainMaterialGenerator : public Ogre::TerrainMaterialGenerator
 {
 public:
-    // diffuseTex / layerWorldSize come from RoR's parsed .otc (the first layer).
-    // We DON'T declare Ogre terrain layer samplers: that makes the Terrain load
-    // the layer textures on a background WorkQueue thread, but WebGL texture
-    // uploads must run on the main thread (emscripten proxies them) and the main
-    // thread is blocked inside the synchronous loadAllTerrains() -> deadlock.
-    // Instead we reference the texture by name in the material below; it then
-    // loads lazily via the normal material/resource path on the main thread.
-    WasmTerrainMaterialGenerator(const std::string& diffuseTex, const std::string& normalTex, float layerWorldSize)
-        : m_diffuse_tex(diffuseTex), m_normal_tex(normalTex), m_layer_world_size(layerWorldSize)
+    // Layer data comes from RoR's parsed .otc. We DON'T declare Ogre terrain layer
+    // samplers: that makes the Terrain load the layer textures on a background
+    // WorkQueue thread, but WebGL texture uploads must run on the main thread
+    // (emscripten proxies them) and the main thread is blocked inside the
+    // synchronous loadAllTerrains() -> deadlock. Instead we reference the diffuse
+    // and blendmap textures by name in the material below; they then load lazily
+    // via the normal material/resource path on the main thread.
+    //
+    // Lighting uses Ogre's global terrain normal map (world-space per-pixel normal
+    // derived from the heightfield), so this works for both flat and hilly terrain.
+    static const size_t MAX_LAYERS = 6;
+
+    explicit WasmTerrainMaterialGenerator(std::vector<WasmTerrainLayer> layers)
+        : m_layers(std::move(layers))
     {
-        mProfiles.push_back(OGRE_NEW Profile(this, "WasmSimple", "Simple lit GLES2 terrain"));
+        if (m_layers.size() > MAX_LAYERS)
+            m_layers.resize(MAX_LAYERS);
+        mProfiles.push_back(OGRE_NEW Profile(this, "WasmSimple", "Blended lit GLES2 terrain"));
         this->setActiveProfile("WasmSimple");
     }
 
-    std::string m_diffuse_tex;
-    std::string m_normal_tex;
-    float       m_layer_world_size = 0.f;
+    std::vector<WasmTerrainLayer> m_layers;
 
     class Profile : public Ogre::TerrainMaterialGenerator::Profile
     {
@@ -182,21 +196,22 @@ public:
         void requestOptions(Ogre::Terrain* terrain) override
         {
             terrain->_setMorphRequired(false);
-            terrain->_setNormalMapRequired(false);
+            // Global normal map: world-space per-pixel normals for slope shading.
+            terrain->_setNormalMapRequired(true);
             terrain->_setLightMapRequired(false);
             terrain->_setCompositeMapRequired(false);
         }
 
-        // Build the GLSL ES vertex/fragment programs for the normal-mapped terrain
-        // pass once. The Wasm terrain is flat, so the tangent frame is constant
-        // (T=+X, B=+Z, N=+Y world) and we can do tangent-space normal mapping
-        // without per-vertex tangents (which Ogre Terrain doesn't provide and RTSS
-        // would otherwise need). Returns true if the programs are available.
-        static bool ensureNormalMapPrograms()
+        // Build (once) the GLSL ES vertex/fragment programs for an N-layer blended,
+        // globally-normal-mapped terrain. The fragment program is generated for the
+        // exact layer count so the unrolled blend has no dynamic sampler indexing
+        // (illegal in GLSL ES 100). Program names are keyed by layer count.
+        static bool ensurePrograms(size_t numLayers)
         {
             auto& hmgr = Ogre::HighLevelGpuProgramManager::getSingleton();
-            if (hmgr.getByName("RoRWasm/TerrainNMVP", Ogre::RGN_DEFAULT) &&
-                hmgr.getByName("RoRWasm/TerrainNMFP", Ogre::RGN_DEFAULT))
+            const std::string vpName = "RoRWasm/TerrainVP";
+            const std::string fpName = "RoRWasm/TerrainFP" + std::to_string(numLayers);
+            if (hmgr.getByName(vpName, Ogre::RGN_DEFAULT) && hmgr.getByName(fpName, Ogre::RGN_DEFAULT))
                 return true;
 
             const char* VS_SRC =
@@ -204,43 +219,59 @@ public:
                 "attribute vec4 vertex;\n"
                 "attribute vec2 uv0;\n"
                 "uniform mat4 worldViewProj;\n"
-                "uniform float uvTiling;\n"
-                "varying vec2 vUV;\n"
+                "varying vec2 vUV;\n"          // 0..1 across the whole terrain page
                 "void main() {\n"
                 "  gl_Position = worldViewProj * vertex;\n"
-                "  vUV = uv0 * uvTiling;\n"
+                "  vUV = uv0;\n"
                 "}\n";
 
-            const char* FS_SRC =
-                "#version 100\n"
-                "precision mediump float;\n"
-                "uniform sampler2D diffuseMap;\n"
-                "uniform sampler2D normalMap;\n"
-                "uniform vec4 lightDir;\n"      // world-space direction the light travels
-                "uniform vec4 lightDiffuse;\n"
-                "uniform vec4 ambient;\n"
-                "varying vec2 vUV;\n"
-                "void main() {\n"
-                "  vec3 nTS = texture2D(normalMap, vUV).xyz * 2.0 - 1.0;\n"
-                // flat terrain constant TBN: world = (tx, tz, ty)
-                "  vec3 nWS = normalize(vec3(nTS.x, nTS.z, nTS.y));\n"
-                "  vec3 L = normalize(-lightDir.xyz);\n"
-                "  float ndl = max(dot(nWS, L), 0.0);\n"
-                "  vec3 base = texture2D(diffuseMap, vUV).rgb;\n"
-                "  gl_FragColor = vec4(base * (ambient.rgb + lightDiffuse.rgb * ndl), 1.0);\n"
-                "}\n";
+            // Fragment program: base layer + (N-1) blended layers, then lit by the
+            // global normal map. Blendmaps are sampled untiled (0..1); diffuse maps
+            // are tiled by per-layer 'tilingN'.
+            std::string fs;
+            fs += "#version 100\n";
+            fs += "precision mediump float;\n";
+            for (size_t i = 0; i < numLayers; ++i)
+                fs += "uniform sampler2D diff" + std::to_string(i) + ";\n";
+            for (size_t i = 1; i < numLayers; ++i)
+                fs += "uniform sampler2D blend" + std::to_string(i) + ";\n";
+            for (size_t i = 0; i < numLayers; ++i)
+                fs += "uniform float tiling" + std::to_string(i) + ";\n";
+            for (size_t i = 1; i < numLayers; ++i)
+                fs += "uniform vec4 chan" + std::to_string(i) + ";\n"; // channel mask * alpha
+            fs += "uniform sampler2D normalMap;\n";
+            fs += "uniform vec4 lightDir;\n";       // world-space direction the light travels
+            fs += "uniform vec4 lightDiffuse;\n";
+            fs += "uniform vec4 ambient;\n";
+            fs += "varying vec2 vUV;\n";
+            fs += "void main() {\n";
+            fs += "  vec3 col = texture2D(diff0, vUV * tiling0).rgb;\n";
+            for (size_t i = 1; i < numLayers; ++i)
+            {
+                std::string si = std::to_string(i);
+                fs += "  float w" + si + " = clamp(dot(texture2D(blend" + si + ", vUV), chan" + si + "), 0.0, 1.0);\n";
+                fs += "  col = mix(col, texture2D(diff" + si + ", vUV * tiling" + si + ").rgb, w" + si + ");\n";
+            }
+            fs += "  vec3 nWS = normalize(texture2D(normalMap, vUV).xyz * 2.0 - 1.0);\n";
+            fs += "  vec3 L = normalize(-lightDir.xyz);\n";
+            fs += "  float ndl = max(dot(nWS, L), 0.0);\n";
+            fs += "  gl_FragColor = vec4(col * (ambient.rgb + lightDiffuse.rgb * ndl), 1.0);\n";
+            fs += "}\n";
 
             try
             {
-                auto vp = hmgr.createProgram("RoRWasm/TerrainNMVP", Ogre::RGN_DEFAULT, "glsles", Ogre::GPT_VERTEX_PROGRAM);
-                vp->setSource(VS_SRC);
-                auto fp = hmgr.createProgram("RoRWasm/TerrainNMFP", Ogre::RGN_DEFAULT, "glsles", Ogre::GPT_FRAGMENT_PROGRAM);
-                fp->setSource(FS_SRC);
+                if (!hmgr.getByName(vpName, Ogre::RGN_DEFAULT))
+                {
+                    auto vp = hmgr.createProgram(vpName, Ogre::RGN_DEFAULT, "glsles", Ogre::GPT_VERTEX_PROGRAM);
+                    vp->setSource(VS_SRC);
+                }
+                auto fp = hmgr.createProgram(fpName, Ogre::RGN_DEFAULT, "glsles", Ogre::GPT_FRAGMENT_PROGRAM);
+                fp->setSource(fs);
                 return true;
             }
             catch (Ogre::Exception& e)
             {
-                RoR::LogFormat("[RoR|wasm] terrain normal-map programs failed: %s", e.getFullDescription().c_str());
+                RoR::LogFormat("[RoR|wasm] terrain programs failed: %s", e.getFullDescription().c_str());
                 return false;
             }
         }
@@ -258,53 +289,88 @@ public:
             WasmTerrainMaterialGenerator* parent =
                 static_cast<WasmTerrainMaterialGenerator*>(this->getParent());
 
-            const Ogre::Real tiling = (parent->m_layer_world_size > 0.f)
-                ? (terrain->getWorldSize() / parent->m_layer_world_size) : 1.f;
+            const std::vector<WasmTerrainLayer>& layers = parent->m_layers;
+            Ogre::TexturePtr normalMap = terrain->getTerrainNormalMap();
+            const size_t n = layers.size();
 
-            // The custom normal-map shader assumes a FLAT terrain (constant tangent
-            // frame). It's only valid when the terrain has no height variation; on a
-            // hilly terrain it would ignore the real per-vertex slope normals and
-            // mis-light everything. Detect flatness from the height range.
-            const bool terrain_is_flat =
-                (terrain->getMaxHeight() - terrain->getMinHeight()) < 1.0f;
-
-            // Preferred path (flat terrains only): custom GLSL ES shader doing
-            // per-pixel normal-mapped lighting (diffuse + normalheight).
-            if (terrain_is_flat && !parent->m_diffuse_tex.empty() && !parent->m_normal_tex.empty() && ensureNormalMapPrograms())
+            // Preferred path: blended, globally-normal-mapped GLSL ES shader. Needs at
+            // least a base layer and the global normal map.
+            if (n >= 1 && !layers[0].diffuse.empty() && normalMap && ensurePrograms(n))
             {
-                pass->setVertexProgram("RoRWasm/TerrainNMVP");
-                pass->setFragmentProgram("RoRWasm/TerrainNMFP");
+                pass->setVertexProgram("RoRWasm/TerrainVP");
+                pass->setFragmentProgram("RoRWasm/TerrainFP" + std::to_string(n));
 
-                Ogre::TextureUnitState* td = pass->createTextureUnitState(parent->m_diffuse_tex);
-                td->setTextureAddressingMode(Ogre::TextureUnitState::TAM_WRAP);
-                Ogre::TextureUnitState* tn = pass->createTextureUnitState(parent->m_normal_tex);
-                tn->setTextureAddressingMode(Ogre::TextureUnitState::TAM_WRAP);
+                Ogre::GpuProgramParametersSharedPtr fsp = pass->getFragmentProgramParameters();
+                int unit = 0;
+
+                // diffuse maps (units 0..n-1)
+                for (size_t i = 0; i < n; ++i)
+                {
+                    Ogre::TextureUnitState* td = pass->createTextureUnitState(layers[i].diffuse);
+                    td->setTextureAddressingMode(Ogre::TextureUnitState::TAM_WRAP);
+                    fsp->setNamedConstant("diff" + std::to_string(i), unit++);
+                }
+                // blendmaps (units n..2n-2), for layers 1..n-1
+                for (size_t i = 1; i < n; ++i)
+                {
+                    Ogre::TextureUnitState* tb = layers[i].blendmap.empty()
+                        ? pass->createTextureUnitState() // transparent default -> layer hidden
+                        : pass->createTextureUnitState(layers[i].blendmap);
+                    tb->setTextureAddressingMode(Ogre::TextureUnitState::TAM_CLAMP);
+                    fsp->setNamedConstant("blend" + std::to_string(i), unit++);
+                }
+                // global normal map (last unit)
+                {
+                    Ogre::TextureUnitState* tn = pass->createTextureUnitState(normalMap->getName());
+                    tn->_setTexturePtr(normalMap);
+                    tn->setTextureAddressingMode(Ogre::TextureUnitState::TAM_CLAMP);
+                    fsp->setNamedConstant("normalMap", unit++);
+                }
+
+                // per-layer tiling + channel masks
+                const float worldSize = (float)terrain->getWorldSize();
+                for (size_t i = 0; i < n; ++i)
+                {
+                    const float tiling = (layers[i].world_size > 0.f) ? (worldSize / layers[i].world_size) : 1.f;
+                    fsp->setNamedConstant("tiling" + std::to_string(i), tiling);
+                }
+                for (size_t i = 1; i < n; ++i)
+                {
+                    Ogre::Vector4 mask(0, 0, 0, 0);
+                    switch (layers[i].blend_mode)
+                    {
+                        case 'R': mask.x = 1; break;
+                        case 'G': mask.y = 1; break;
+                        case 'B': mask.z = 1; break;
+                        case 'A': mask.w = 1; break;
+                        default:  mask.x = 1; break;
+                    }
+                    mask *= layers[i].alpha;
+                    fsp->setNamedConstant("chan" + std::to_string(i), mask);
+                }
 
                 Ogre::GpuProgramParametersSharedPtr vsp = pass->getVertexProgramParameters();
                 vsp->setNamedAutoConstant("worldViewProj", Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX);
-                vsp->setNamedConstant("uvTiling", (float)tiling);
 
-                Ogre::GpuProgramParametersSharedPtr fsp = pass->getFragmentProgramParameters();
                 fsp->setNamedAutoConstant("lightDir",     Ogre::GpuProgramParameters::ACT_LIGHT_DIRECTION, 0);
                 fsp->setNamedAutoConstant("lightDiffuse", Ogre::GpuProgramParameters::ACT_LIGHT_DIFFUSE_COLOUR, 0);
                 fsp->setNamedAutoConstant("ambient",      Ogre::GpuProgramParameters::ACT_AMBIENT_LIGHT_COLOUR);
-                fsp->setNamedConstant("diffuseMap", 0);
-                fsp->setNamedConstant("normalMap", 1);
                 return mat;
             }
 
-            // Fallback: RTSS-generated fixed-function lighting (diffuse only, or a
-            // flat ground colour if no texture). Used when no normal map is present.
+            // Fallback: RTSS-generated fixed-function lighting (base diffuse only, or a
+            // flat ground colour if no texture).
             pass->setLightingEnabled(true);
             pass->setAmbient(1.f, 1.f, 1.f);
             pass->setDiffuse(1.f, 1.f, 1.f, 1.f);
             pass->setSpecular(0.f, 0.f, 0.f, 0.f);
 
-            if (!parent->m_diffuse_tex.empty())
+            if (n >= 1 && !layers[0].diffuse.empty())
             {
-                Ogre::TextureUnitState* tu = pass->createTextureUnitState(parent->m_diffuse_tex);
+                const float tiling = (layers[0].world_size > 0.f) ? (terrain->getWorldSize() / layers[0].world_size) : 1.f;
+                Ogre::TextureUnitState* tu = pass->createTextureUnitState(layers[0].diffuse);
                 tu->setTextureAddressingMode(Ogre::TextureUnitState::TAM_WRAP);
-                if (parent->m_layer_world_size > 0.f)
+                if (tiling > 0.f)
                     tu->setTextureScale(1.f / tiling, 1.f / tiling);
             }
             else
@@ -620,22 +686,27 @@ void TerrainGeometryManager::configureTerrainDefaults()
     else
     {
 #ifdef __EMSCRIPTEN__
-        // The SM2/PSSM generator's shaders don't work on WebGL2 - use a simple
-        // RTSS-backed material so the terrain actually renders. Feed it the first
-        // layer's diffuse texture (from the parsed .otc) so it can be textured
-        // without Ogre's worker-thread layer loading (which deadlocks on WebGL).
-        std::string diffuse_tex;
-        std::string normal_tex;
-        float layer_world_size = 0.f;
-        if (!m_spec->pages.empty() && !m_spec->pages.begin()->layers.empty())
+        // The SM2/PSSM generator's shaders don't work on WebGL2 - use a custom
+        // GLSL ES material that blends all .otc layers by their blendmaps and lights
+        // them with the global terrain normal map. Feed it the parsed .otc layers so
+        // it can reference the textures by name (avoiding Ogre's worker-thread layer
+        // loading, which deadlocks on WebGL).
+        std::vector<WasmTerrainLayer> wasm_layers;
+        if (!m_spec->pages.empty())
         {
-            const RoR::OTCLayer& layer0 = m_spec->pages.begin()->layers.front();
-            diffuse_tex = layer0.diffusespecular_filename;
-            normal_tex = layer0.normalheight_filename;
-            layer_world_size = layer0.world_size;
+            for (const RoR::OTCLayer& layer : m_spec->pages.begin()->layers)
+            {
+                WasmTerrainLayer wl;
+                wl.diffuse    = layer.diffusespecular_filename;
+                wl.blendmap   = layer.blendmap_filename;
+                wl.world_size = layer.world_size;
+                wl.alpha      = layer.alpha;
+                wl.blend_mode = layer.blend_mode;
+                wasm_layers.push_back(wl);
+            }
         }
         terrainOptions->setDefaultMaterialGenerator(
-            Ogre::TerrainMaterialGeneratorPtr(new WasmTerrainMaterialGenerator(diffuse_tex, normal_tex, layer_world_size)));
+            Ogre::TerrainMaterialGeneratorPtr(new WasmTerrainMaterialGenerator(std::move(wasm_layers))));
 #else
         terrainOptions->setDefaultMaterialGenerator(
             Ogre::TerrainMaterialGeneratorPtr(new Ogre::TerrainPSSMMaterialGenerator()));
