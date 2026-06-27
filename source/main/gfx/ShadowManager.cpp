@@ -58,12 +58,11 @@ int ShadowManager::updateShadowTechnique()
     App::GetGfxScene()->GetSceneManager()->setShowDebugShadows(false);
 
 #ifdef __EMSCRIPTEN__
-    // PSSM on the web build isn't supported yet: it needs PF_FLOAT32_R shadow
-    // maps, a GLES2 depth-caster shader and the managed-material receiver shaders
-    // (Cg) that don't compile on WebGL2, and processPSSM() writes the shared
-    // 'pssm_params' which would throw. The shadow cvar stays user-settable (so the
-    // option isn't hidden), but force the technique off here so toggling it just
-    // degrades to no shadows instead of crashing.
+    // No shadows on WebGL2. PSSM needs PF_FLOAT32_R maps + a GLES2 depth caster and
+    // Cg managed-material receiver shaders. Plain modulative texture shadows were also
+    // tried (RGBA8 map, focused camera) but wedge the synchronous terrain load - the
+    // RTShaderSystem shadow-receiver shadergen / shadow-RTT path hangs the main thread.
+    // The cvar stays user-settable so the option isn't hidden; force the technique off.
     App::GetGfxScene()->GetSceneManager()->setShadowTechnique(Ogre::SHADOWTYPE_NONE);
     return 0;
 #endif
@@ -175,6 +174,11 @@ void ShadowManager::updatePSSM()
 
 void ShadowManager::updateTerrainMaterial(Ogre::TerrainPSSMMaterialGenerator::SM2Profile* matProfile)
 {
+#ifdef __EMSCRIPTEN__
+    // No shadows on the web (see updateShadowTechnique) - skip the PSSM depth receiver,
+    // whose shaders don't compile on WebGL2.
+    return;
+#endif
     if (App::gfx_shadow_type->getEnum<GfxShadowType>() == GfxShadowType::PSSM)
     {
         Ogre::PSSMShadowCameraSetup* pssmSetup = static_cast<Ogre::PSSMShadowCameraSetup*>(PSSM_Shadows.mPSSMSetup.get());

@@ -185,7 +185,8 @@ void Console::cVarSetupBuiltins()
 #ifdef __EMSCRIPTEN__
     // PSSM shadow shaders (Cg/GLSL) don't compile on WebGL2 and their setup
     // references a 'pssm_params' shared GPU param that then never exists, which
-    // throws during terrain load. Default to no shadows on the web build.
+    // throws during terrain load. Modulative texture shadows also hang the load.
+    // Default to no shadows on the web build.
     App::gfx_shadow_type         = this->cVarCreate("gfx_shadow_type",         "Shadow technique",           CVAR_ARCHIVE | CVAR_TYPE_INT,     "0"/*(int)GfxShadowType::NONE*/);
 #else
     App::gfx_shadow_type         = this->cVarCreate("gfx_shadow_type",         "Shadow technique",           CVAR_ARCHIVE | CVAR_TYPE_INT,     "1"/*(int)GfxShadowType::PSSM*/);
