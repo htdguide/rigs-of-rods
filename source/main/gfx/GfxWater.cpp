@@ -35,6 +35,110 @@ using namespace RoR;
 
 static const int WAVEREZ = 100;
 
+#ifdef __EMSCRIPTEN__
+// Basic water on WebGL2: the FULL/REFLECT path needs reflection/refraction render
+// targets and Cg fresnel shaders that don't exist on WebGL2, so the web build uses
+// BASIC mode (a flat scrolling 'tracks/basicwater' plane that looks dull). Replace
+// it with a custom GLSL ES water material: procedurally animated ripple normals
+// (sin waves, NO 2D sampler -> avoids the GLES2 samplerCube/sampler2D collision),
+// a static sky-cube reflection, fresnel mix, a teal body tint, sun glint and slight
+// translucency. Returns the material name (falls back to basicwater on failure).
+static std::string BuildWasmWaterMaterial()
+{
+    const char* MAT_NAME = "RoRWasm/Water";
+    Ogre::MaterialManager& mm = Ogre::MaterialManager::getSingleton();
+    if (mm.getByName(MAT_NAME, Ogre::RGN_DEFAULT))
+        return MAT_NAME;
+
+    auto& hmgr = Ogre::HighLevelGpuProgramManager::getSingleton();
+
+    const char* VS_SRC =
+        "#version 100\n"
+        "attribute vec4 vertex;\n"
+        "uniform mat4 worldViewProj;\n"
+        "uniform mat4 worldMat;\n"
+        "varying vec3 vWorldPos;\n"
+        "void main() {\n"
+        "  gl_Position = worldViewProj * vertex;\n"
+        "  vWorldPos = (worldMat * vertex).xyz;\n"
+        "}\n";
+
+    const char* FS_SRC =
+        "#version 100\n"
+        "precision mediump float;\n"
+        "uniform samplerCube envMap;\n"
+        "uniform vec3 camPos;\n"
+        "uniform vec4 lightDir;\n"        // world-space direction the light travels
+        "uniform vec4 lightDiffuse;\n"
+        "uniform float time;\n"
+        "varying vec3 vWorldPos;\n"
+        "void main() {\n"
+        "  vec3 p = vWorldPos * 0.05;\n"
+        "  float n1 = sin(p.x * 1.3 + time * 1.1) + sin(p.z * 1.7 + time * 1.3);\n"
+        "  float n2 = sin(p.x * 2.1 - time * 0.9) + sin(p.z * 1.1 + time * 1.7);\n"
+        "  vec3 N = normalize(vec3(n1 * 0.04, 1.0, n2 * 0.04));\n"
+        "  vec3 V = normalize(camPos - vWorldPos);\n"
+        "  vec3 R = reflect(-V, N);\n"
+        "  vec3 sky = textureCube(envMap, R).rgb;\n"
+        "  float fres = 0.12 + 0.88 * pow(1.0 - max(dot(N, V), 0.0), 5.0);\n"
+        "  vec3 deep = vec3(0.10, 0.20, 0.25);\n"   // teal water body
+        "  vec3 col = mix(deep, sky, fres);\n"
+        "  vec3 L = normalize(-lightDir.xyz);\n"
+        "  float spec = pow(max(dot(R, L), 0.0), 60.0);\n"
+        "  col += lightDiffuse.rgb * spec;\n"
+        "  gl_FragColor = vec4(col, 0.82);\n"       // slightly translucent
+        "}\n";
+
+    try
+    {
+        if (!hmgr.getByName("RoRWasm/WaterVP", Ogre::RGN_DEFAULT))
+        {
+            auto vp = hmgr.createProgram("RoRWasm/WaterVP", Ogre::RGN_DEFAULT, "glsles", Ogre::GPT_VERTEX_PROGRAM);
+            vp->setSource(VS_SRC);
+        }
+        if (!hmgr.getByName("RoRWasm/WaterFP", Ogre::RGN_DEFAULT))
+        {
+            auto fp = hmgr.createProgram("RoRWasm/WaterFP", Ogre::RGN_DEFAULT, "glsles", Ogre::GPT_FRAGMENT_PROGRAM);
+            fp->setSource(FS_SRC);
+        }
+
+        Ogre::MaterialPtr mat = mm.create(MAT_NAME, Ogre::RGN_DEFAULT);
+        Ogre::Pass* pass = mat->getTechnique(0)->getPass(0);
+        pass->setSceneBlending(Ogre::SBT_TRANSPARENT_ALPHA);
+        pass->setDepthWriteEnabled(false);
+        pass->setCullingMode(Ogre::CULL_NONE);
+        pass->setVertexProgram("RoRWasm/WaterVP");
+        pass->setFragmentProgram("RoRWasm/WaterFP");
+
+        // Static sky cube (same faces as the skybox / vehicle reflection).
+        Ogre::TextureUnitState* env = pass->createTextureUnitState();
+        const Ogre::String faces[6] = {
+            "early_morning_FR.jpg", "early_morning_BK.jpg",
+            "early_morning_LF.jpg", "early_morning_RT.jpg",
+            "early_morning_UP.jpg", "early_morning_DN.jpg" };
+        env->setCubicTextureName(faces, true);
+        env->setTextureAddressingMode(Ogre::TextureUnitState::TAM_CLAMP);
+
+        Ogre::GpuProgramParametersSharedPtr vsp = pass->getVertexProgramParameters();
+        vsp->setNamedAutoConstant("worldViewProj", Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX);
+        vsp->setNamedAutoConstant("worldMat",      Ogre::GpuProgramParameters::ACT_WORLD_MATRIX);
+
+        Ogre::GpuProgramParametersSharedPtr fsp = pass->getFragmentProgramParameters();
+        fsp->setNamedConstant("envMap", 0);
+        fsp->setNamedAutoConstant("camPos",       Ogre::GpuProgramParameters::ACT_CAMERA_POSITION);
+        fsp->setNamedAutoConstant("lightDir",     Ogre::GpuProgramParameters::ACT_LIGHT_DIRECTION, 0);
+        fsp->setNamedAutoConstant("lightDiffuse", Ogre::GpuProgramParameters::ACT_LIGHT_DIFFUSE_COLOUR, 0);
+        fsp->setNamedAutoConstant("time",         Ogre::GpuProgramParameters::ACT_TIME);
+        return MAT_NAME;
+    }
+    catch (Ogre::Exception& e)
+    {
+        RoR::LogFormat("[RoR|wasm] water material failed: %s", e.getFullDescription().c_str());
+        return "tracks/basicwater";
+    }
+}
+#endif
+
 GfxWater::GfxWater(Ogre::Vector3 terrn_size, float initial_water_height) :
     m_map_size(terrn_size),
     m_visual_water_height(initial_water_height)
@@ -257,7 +361,11 @@ void GfxWater::PrepareWater()
             m_water_plane,
             m_map_size.x * m_waterplane_mesh_scale, m_map_size.z * m_waterplane_mesh_scale, WAVEREZ, WAVEREZ, true, 1, 50, 50, Vector3::UNIT_Z, HardwareBuffer::HBU_DYNAMIC_WRITE_ONLY_DISCARDABLE);
         m_waterplane_entity = App::GetGfxScene()->GetSceneManager()->createEntity("plane", "WaterPlane");
+#ifdef __EMSCRIPTEN__
+        m_waterplane_entity->setMaterialName(BuildWasmWaterMaterial());
+#else
         m_waterplane_entity->setMaterialName("tracks/basicwater");
+#endif
     }
 
     m_waterplane_entity->setCastShadows(false);
