@@ -200,7 +200,7 @@ void Console::cVarSetupBuiltins()
     App::gfx_water_mode          = this->cVarCreate("gfx_water_mode",          "Water effects",              CVAR_ARCHIVE | CVAR_TYPE_INT,     ROR_GFX_DEFAULT("1"/*BASIC, web: no reflect/refract RTT*/, "3"/*(int)GfxWaterMode::FULL_FAST*/));
     App::gfx_anisotropy          = this->cVarCreate("gfx_anisotropy",          "Anisotropy",                 CVAR_ARCHIVE | CVAR_TYPE_INT,     "4");
     App::gfx_water_waves         = this->cVarCreate("gfx_water_waves",         "Waves",                      CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
-    App::gfx_particles_mode      = this->cVarCreate("gfx_particles_mode",      "Particles",                  CVAR_ARCHIVE | CVAR_TYPE_INT);
+    App::gfx_particles_mode      = this->cVarCreate("gfx_particles_mode",      "Particles",                  CVAR_ARCHIVE | CVAR_TYPE_INT,     ROR_GFX_DEFAULT("1"/*web: dust/smoke/splash on (billboard particles)*/, "0"));
     App::gfx_enable_videocams    = this->cVarCreate("gfx_enable_videocams",    "gfx_enable_videocams",       CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::gfx_window_videocams    = this->cVarCreate("gfx_window_videocams",    "UseVideocameraWindows",      CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::gfx_surveymap_icons     = this->cVarCreate("gfx_surveymap_icons",     "Overview map icons",         CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "true");
