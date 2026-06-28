@@ -322,8 +322,8 @@ void RoR::Terrain::initSkySubSystem()
         // of a flat clear colour - JPG uploads fine on WebGL2 (no BGRA). We create
         // the material in code (rather than reuse cubemaps.material's
         // Examples/*SkyBox) because Ogre's cubic_texture derives lower-case face
-        // suffixes (early_morning_fr.jpg) but the bundled faces are upper-case
-        // (early_morning_FR.jpg) - a mismatch on the case-sensitive web FS.
+        // suffixes (cloudy_noon_fr.jpg) but the bundled faces are upper-case
+        // (cloudy_noon_FR.jpg) - a mismatch on the case-sensitive web FS.
         try
         {
             const char* SKY_MAT = "RoRWasm/SkyBox";
@@ -334,12 +334,20 @@ void RoR::Terrain::initSkySubSystem()
                 Ogre::Pass* sp = sky->getTechnique(0)->getPass(0);
                 sp->setLightingEnabled(false);
                 sp->setDepthWriteEnabled(false);
+                // The skybox is viewed from inside the box; without disabling culling
+                // the camera-facing (back-wound) faces get culled and the clear colour
+                // shows through -> half the sky goes grey depending on view direction.
+                sp->setCullingMode(Ogre::CULL_NONE);
+                sp->setManualCullingMode(Ogre::MANUAL_CULL_NONE);
+                // Skyboxes must not be fogged (they're at a fixed distance) - otherwise
+                // the scene's linear fog hazes the sky towards the fog colour.
+                sp->setFog(true, Ogre::FOG_NONE);
                 Ogre::TextureUnitState* stu = sp->createTextureUnitState();
                 // separateUV order: front, back, left, right, up, down.
                 const Ogre::String faces[6] = {
-                    "early_morning_FR.jpg", "early_morning_BK.jpg",
-                    "early_morning_LF.jpg", "early_morning_RT.jpg",
-                    "early_morning_UP.jpg", "early_morning_DN.jpg" };
+                    "cloudy_noon_FR.jpg", "cloudy_noon_BK.jpg",
+                    "cloudy_noon_LF.jpg", "cloudy_noon_RT.jpg",
+                    "cloudy_noon_UP.jpg", "cloudy_noon_DN.jpg" };
                 stu->setCubicTextureName(faces, false);
                 stu->setTextureAddressingMode(Ogre::TextureUnitState::TAM_CLAMP);
             }
@@ -403,14 +411,14 @@ void RoR::Terrain::initFog()
         // which on desktop means NO fog. On the web we always want some atmospheric
         // haze, so apply fog here unconditionally (don't gate on the sight range).
         //
-        // Fade distance to a light warm-grey that matches the skybox horizon band,
-        // so the far terrain dissolves into the cube skybox instead of ending in a
-        // hard edge. Fixed metre distances (the terrain's world_size isn't populated
-        // yet at initFog time - getMaxTerrainSize() returns 0 here) tuned so the near
-        // ground stays clear and the far ground hazes out across a ~1km terrain.
+        // Fade distance to a light blue-grey that matches the cloudy_noon skybox
+        // horizon band, so the far terrain dissolves into the cube skybox instead of
+        // ending in a hard edge. Fixed metre distances (the terrain's world_size isn't
+        // populated yet at initFog time - getMaxTerrainSize() returns 0 here) tuned so
+        // the near ground stays clear and the far ground hazes out across a ~1km terrain.
         const float fog_start = 300.f;
         const float fog_end   = 1500.f;
-        App::GetGfxScene()->GetSceneManager()->setFog(FOG_LINEAR, Ogre::ColourValue(0.70f, 0.68f, 0.64f), 0.000f, fog_start, fog_end);
+        App::GetGfxScene()->GetSceneManager()->setFog(FOG_LINEAR, Ogre::ColourValue(0.74f, 0.79f, 0.85f), 0.000f, fog_start, fog_end);
 
         // RTSS bakes the fog stage into each generated shader at build time based
         // on the scene fog mode. The terrain/character/etc. shaders were generated

@@ -2735,9 +2735,9 @@ void ActorSpawner::ProcessManagedMaterial(RigDef::ManagedMaterial & def)
             Ogre::TextureUnitState* env = refl->createTextureUnitState();
             // Real cube map (forUVW=true) -> samplerCube on WebGL2. Same faces as the skybox.
             const Ogre::String faces[6] = {
-                "early_morning_FR.jpg", "early_morning_BK.jpg",
-                "early_morning_LF.jpg", "early_morning_RT.jpg",
-                "early_morning_UP.jpg", "early_morning_DN.jpg" };
+                "cloudy_noon_FR.jpg", "cloudy_noon_BK.jpg",
+                "cloudy_noon_LF.jpg", "cloudy_noon_RT.jpg",
+                "cloudy_noon_UP.jpg", "cloudy_noon_DN.jpg" };
             env->setCubicTextureName(faces, true);
             env->setTextureAddressingMode(Ogre::TextureUnitState::TAM_CLAMP);
             env->setEnvironmentMap(true, Ogre::TextureUnitState::ENV_REFLECTION);
