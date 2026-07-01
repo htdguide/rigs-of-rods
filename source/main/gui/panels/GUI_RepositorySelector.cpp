@@ -51,6 +51,10 @@
 #   include <curl/easy.h>
 #endif //USE_CURL
 
+#ifdef __EMSCRIPTEN__
+#   include "WasmNet.h" // libcurl has no TLS/socket transport on WebGL2; use browser fetch
+#endif
+
 #if defined(_MSC_VER) && defined(GetObject) // This MS Windows macro from <wingdi.h> (Windows Kit 8.1) clashes with RapidJSON
 #   undef GetObject
 #endif
@@ -123,6 +127,13 @@ std::vector<GUI::ResourceCategories> GetResourceCategories(std::string portal_ur
 
     // The CURL* handle is not multithreaded, see https://curl.se/libcurl/c/threadsafe.html
     // For simplicity we avoid any reuse during OGRE14 migration.
+#ifdef __EMSCRIPTEN__
+    std::vector<char> resp_bytes;
+    response_code = RoR::WasmHttpGet(RoR::WasmProxiedUrl(repolist_url), resp_bytes);
+    response_payload.assign(resp_bytes.begin(), resp_bytes.end());
+    bool net_ok = (response_code == 200);
+    (void)response_header; (void)user_agent;
+#else
     CURL *curl = curl_easy_init();
     curl_easy_setopt(curl, CURLOPT_URL, repolist_url.c_str());
     curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
@@ -140,13 +151,14 @@ std::vector<GUI::ResourceCategories> GetResourceCategories(std::string portal_ur
 
     curl_easy_cleanup(curl);
     curl = nullptr;
+    bool net_ok = (curl_result == CURLE_OK && response_code == 200);
+#endif
 
     std::vector<GUI::ResourceCategories> cat;
-    if (curl_result != CURLE_OK || response_code != 200)
+    if (!net_ok)
     {
         Ogre::LogManager::getSingleton().stream()
-            << "[RoR|Repository] Failed to retrieve category list;"
-            << " Error: '" << curl_easy_strerror(curl_result) << "'; HTTP status code: " << response_code;
+            << "[RoR|Repository] Failed to retrieve category list; HTTP status code: " << response_code;
         return cat;
     }
 
@@ -178,6 +190,13 @@ void GetResources(std::string portal_url)
     long response_code = 0;
     std::string user_agent = fmt::format("{}/{}", "Rigs of Rods Client", ROR_VERSION_STRING);
 
+#ifdef __EMSCRIPTEN__
+    std::vector<char> resp_bytes;
+    response_code = RoR::WasmHttpGet(RoR::WasmProxiedUrl(repolist_url), resp_bytes);
+    response_payload.assign(resp_bytes.begin(), resp_bytes.end());
+    CURLcode curl_result = (response_code == 200) ? CURLE_OK : CURLE_COULDNT_CONNECT;
+    (void)response_header; (void)user_agent;
+#else
     CURL *curl = curl_easy_init();
     curl_easy_setopt(curl, CURLOPT_URL, repolist_url.c_str());
     curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
@@ -195,6 +214,7 @@ void GetResources(std::string portal_url)
 
     curl_easy_cleanup(curl);
     curl = nullptr;
+#endif
 
     if (curl_result != CURLE_OK || response_code != 200)
     {
@@ -266,6 +286,13 @@ void GetResourceFiles(std::string portal_url, int resource_id)
     std::string user_agent = fmt::format("{}/{}", "Rigs of Rods Client", ROR_VERSION_STRING);
     long response_code = 0;
 
+#ifdef __EMSCRIPTEN__
+    std::vector<char> resp_bytes;
+    response_code = RoR::WasmHttpGet(RoR::WasmProxiedUrl(resource_url), resp_bytes);
+    response_payload.assign(resp_bytes.begin(), resp_bytes.end());
+    CURLcode curl_result = (response_code == 200) ? CURLE_OK : CURLE_COULDNT_CONNECT;
+    (void)user_agent;
+#else
     CURL *curl = curl_easy_init();
     curl_easy_setopt(curl, CURLOPT_URL, resource_url.c_str());
     curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
@@ -282,6 +309,7 @@ void GetResourceFiles(std::string portal_url, int resource_id)
 
     curl_easy_cleanup(curl);
     curl = nullptr;
+#endif
 
     if (curl_result != CURLE_OK || response_code != 200)
     {
@@ -346,6 +374,19 @@ void DownloadResourceFile(RepoFileInstallRequest request)
         // smart pointer - closes stream automatically
         Ogre::DataStreamPtr datastream = Ogre::ResourceGroupManager::getSingleton().createResource(part_filepath, RGN_CACHE);
 
+#ifdef __EMSCRIPTEN__
+        // Fetch the whole file into memory (browser XHR), then write it to the cache
+        // stream. The download host (forum.rigsofrods.org) is cross-origin and not
+        // CORS-enabled, so this needs 'remote_cors_proxy' set (the API browse doesn't).
+        std::vector<char> file_bytes;
+        response_code = RoR::WasmHttpGet(RoR::WasmProxiedUrl(url), file_bytes);
+        if (response_code == 200 && !file_bytes.empty())
+        {
+            datastream->write(file_bytes.data(), file_bytes.size());
+        }
+        CURLcode curl_result = (response_code == 200 && !file_bytes.empty()) ? CURLE_OK : CURLE_COULDNT_CONNECT;
+        (void)progress_context;
+#else
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
 #ifdef _WIN32
@@ -356,9 +397,10 @@ void DownloadResourceFile(RepoFileInstallRequest request)
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, NULL); // Disable Internal CURL progressmeter
         curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, &progress_context);
         curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, CurlProgressFunc); // Use our progress window
-        
+
         CURLcode curl_result = curl_easy_perform(curl);
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+#endif
 
         if (curl_result != CURLE_OK || response_code != 200)
         {
