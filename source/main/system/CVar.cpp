@@ -183,11 +183,11 @@ void Console::cVarSetupBuiltins()
     App::gfx_flares_mode         = this->cVarCreate("gfx_flares_mode",         "Lights",                     CVAR_ARCHIVE | CVAR_TYPE_INT,     "4"/*(int)GfxFlaresMode::ALL_VEHICLES_ALL_LIGHTS*/);
     App::gfx_polygon_mode        = this->cVarCreate("gfx_polygon_mode",        "Polygon mode",                              CVAR_TYPE_INT,     "1"/*(int)Ogre::PM_SOLID*/);
 #ifdef __EMSCRIPTEN__
-    // PSSM shadow shaders (Cg/GLSL) don't compile on WebGL2 and their setup
-    // references a 'pssm_params' shared GPU param that then never exists, which
-    // throws during terrain load. Modulative texture shadows also hang the load.
-    // Default to no shadows on the web build.
-    App::gfx_shadow_type         = this->cVarCreate("gfx_shadow_type",         "Shadow technique",           CVAR_ARCHIVE | CVAR_TYPE_INT,     "0"/*(int)GfxShadowType::NONE*/);
+    // Must stay NONE on web: any non-NONE value makes materials select their PSSM
+    // shadow-receiver technique (Cg shadow_receiver_vs), which isn't supported on WebGL2
+    // -> those materials go blank/white. Web "shadows" are the fake blob decals under
+    // actors (GfxScene::UpdateBlobShadows), which run unconditionally on the web build.
+    App::gfx_shadow_type         = this->cVarCreate("gfx_shadow_type",         "Shadow technique",           CVAR_ARCHIVE | CVAR_TYPE_INT,     ROR_GFX_DEFAULT("0"/*web: NONE (blob shadows instead)*/, "1"/*(int)GfxShadowType::PSSM*/));
 #else
     App::gfx_shadow_type         = this->cVarCreate("gfx_shadow_type",         "Shadow technique",           CVAR_ARCHIVE | CVAR_TYPE_INT,     "1"/*(int)GfxShadowType::PSSM*/);
 #endif

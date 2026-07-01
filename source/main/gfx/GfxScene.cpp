@@ -30,6 +30,7 @@
 #include "AppContext.h"
 #include "Actor.h"
 #include "ActorManager.h"
+#include "Character.h"
 #include "ApproxMath.h"
 #include "Console.h"
 #include "DustPool.h"
@@ -81,12 +82,106 @@ void GfxScene::ClearScene()
     // Wipe scene manager
     m_scene_manager->clearScene();
     m_gfx_freebeams_grouping_node = nullptr;
+#ifdef __EMSCRIPTEN__
+    m_blob_shadows.clear(); // nodes were just destroyed by clearScene()
+#endif
 
     // Recover from the wipe
     App::GetCameraManager()->ReCreateCameraNode();
     App::GetGuiManager()->DirectionArrow.CreateArrow();
     m_gfx_freebeams_grouping_node = m_scene_manager->getRootSceneNode()->createChildSceneNode("FreeBeam Visuals");
 }
+
+#ifdef __EMSCRIPTEN__
+void GfxScene::UpdateBlobShadows()
+{
+    // Shared 1x1 ground plane mesh + soft radial-blob shader material (created once).
+    const char* MESH = "RoRWasm/BlobPlane";
+    const char* MAT  = "RoRWasm/BlobShadow";
+    Ogre::MeshManager& meshmgr = Ogre::MeshManager::getSingleton();
+    if (!meshmgr.getByName(MESH, Ogre::RGN_DEFAULT))
+    {
+        meshmgr.createPlane(MESH, Ogre::RGN_DEFAULT, Ogre::Plane(Ogre::Vector3::UNIT_Y, 0),
+                            1.f, 1.f, 1, 1, true, 1, 1.f, 1.f, Ogre::Vector3::UNIT_Z);
+    }
+    Ogre::MaterialManager& matmgr = Ogre::MaterialManager::getSingleton();
+    if (!matmgr.getByName(MAT, Ogre::RGN_DEFAULT))
+    {
+        auto& hmgr = Ogre::HighLevelGpuProgramManager::getSingleton();
+        if (!hmgr.getByName("RoRWasm/BlobVP", Ogre::RGN_DEFAULT))
+        {
+            auto vp = hmgr.createProgram("RoRWasm/BlobVP", Ogre::RGN_DEFAULT, "glsles", Ogre::GPT_VERTEX_PROGRAM);
+            vp->setSource("#version 100\n"
+                          "attribute vec4 vertex;\n"
+                          "attribute vec2 uv0;\n"
+                          "uniform mat4 worldViewProj;\n"
+                          "varying vec2 vUV;\n"
+                          "void main() { gl_Position = worldViewProj * vertex; vUV = uv0; }\n");
+        }
+        if (!hmgr.getByName("RoRWasm/BlobFP", Ogre::RGN_DEFAULT))
+        {
+            auto fp = hmgr.createProgram("RoRWasm/BlobFP", Ogre::RGN_DEFAULT, "glsles", Ogre::GPT_FRAGMENT_PROGRAM);
+            fp->setSource("#version 100\n"
+                          "precision mediump float;\n"
+                          "varying vec2 vUV;\n"
+                          "void main() {\n"
+                          "  vec2 d = vUV - 0.5;\n"
+                          "  float r = length(d) * 2.0;\n"                 // 0 centre .. 1 edge
+                          "  float a = (1.0 - smoothstep(0.35, 1.0, r)) * 0.5;\n"
+                          "  gl_FragColor = vec4(0.0, 0.0, 0.0, a);\n"
+                          "}\n");
+        }
+        Ogre::MaterialPtr m = matmgr.create(MAT, Ogre::RGN_DEFAULT);
+        Ogre::Pass* p = m->getTechnique(0)->getPass(0);
+        p->setLightingEnabled(false);
+        p->setDepthWriteEnabled(false);
+        p->setSceneBlending(Ogre::SBT_TRANSPARENT_ALPHA);
+        p->setCullingMode(Ogre::CULL_NONE);
+        p->setVertexProgram("RoRWasm/BlobVP");
+        p->setFragmentProgram("RoRWasm/BlobFP");
+        p->getVertexProgramParameters()->setNamedAutoConstant(
+            "worldViewProj", Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX);
+    }
+
+    size_t idx = 0;
+    auto place = [&](float cx, float gy, float cz, float sx, float sz)
+    {
+        if (idx >= m_blob_shadows.size())
+        {
+            Ogre::SceneNode* n = m_scene_manager->getRootSceneNode()->createChildSceneNode();
+            Ogre::Entity* e = m_scene_manager->createEntity(MESH);
+            e->setMaterialName(MAT);
+            e->setCastShadows(false);
+            n->attachObject(e);
+            m_blob_shadows.push_back(n);
+        }
+        Ogre::SceneNode* n = m_blob_shadows[idx++];
+        n->setVisible(true);
+        n->setPosition(cx, gy + 0.06f, cz); // just above ground to avoid z-fighting
+        n->setScale(sx, 1.f, sz);
+    };
+
+    // Vehicles: blob sized to the footprint (world-axis AABB).
+    for (GfxActor* a : m_all_gfx_actors)
+    {
+        const Ogre::AxisAlignedBox& bb = a->GetSimDataBuffer().simbuf_aabb;
+        if (bb.isNull() || bb.isInfinite())
+            continue;
+        const Ogre::Vector3 c = bb.getCenter();
+        const Ogre::Vector3 s = bb.getSize();
+        place(c.x, bb.getMinimum().y, c.z, s.x * 1.15f, s.z * 1.15f);
+    }
+    // Characters: small round blob at the feet.
+    for (GfxCharacter* ch : m_all_gfx_characters)
+    {
+        const Ogre::Vector3 c = ch->xc_simbuf.simbuf_character_pos;
+        place(c.x, c.y, c.z, 1.1f, 1.1f);
+    }
+
+    for (size_t i = idx; i < m_blob_shadows.size(); ++i)
+        m_blob_shadows[i]->setVisible(false);
+}
+#endif // __EMSCRIPTEN__
 
 void GfxScene::Init()
 {
@@ -168,6 +263,11 @@ void GfxScene::UpdateScene(float dt)
             itor.second->update();
         }
     }
+
+#ifdef __EMSCRIPTEN__
+    // Fake blob shadows under actors/characters (real shadows hang on WebGL2).
+    this->UpdateBlobShadows();
+#endif
 
     // Realtime reflections on player vehicle
     // IMPORTANT: Toggles visibility of all meshes -> must be done before any other visibility control is evaluated (i.e. aero propellers)

@@ -101,6 +101,15 @@ private:
     std::vector<FreeBeamGfx>          m_gfx_freebeams;
     FreeBeamGfxID_t                   m_gfx_freebeam_next_id = 0;
     Ogre::SceneNode*                  m_gfx_freebeams_grouping_node = nullptr; //!< Only for nicer scenegraph when viewing through Inspector gadget.
+
+#ifdef __EMSCRIPTEN__
+    // Fake blob shadows under vehicles/characters. Real (PSSM/texture) shadows hang
+    // the WebGL2 load (RTSS shadow-receiver shadergen), so on the web build we drop a
+    // soft dark decal on the ground under each actor to ground it. Pool of reusable
+    // nodes; wiped by ClearScene() with the rest of the scene on terrain change.
+    std::vector<Ogre::SceneNode*>     m_blob_shadows;
+    void                             UpdateBlobShadows();
+#endif
 };
 
 /// @} // addtogroup Gfx
