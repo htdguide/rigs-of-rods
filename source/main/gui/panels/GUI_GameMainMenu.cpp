@@ -32,6 +32,9 @@
 #include "GUIUtils.h"
 #include "GUI_MainSelector.h"
 #include "Language.h"
+#ifdef __EMSCRIPTEN__
+#include "WasmNet.h"
+#endif
 
 #include "PlatformUtils.h"
 #include "RoRVersion.h"
@@ -151,6 +154,15 @@ void GameMainMenu::DrawMenuPanel()
                 App::GetGuiManager()->RepositorySelector.SetVisible(true);
                 this->SetVisible(false);
             }
+
+#ifdef __EMSCRIPTEN__
+            // Forum downloads are Cloudflare-gated on the web build, so let the user
+            // install a .zip they downloaded in their browser (picker -> /content -> rescan).
+            if (HighlightButton(_LC("MainMenu", "Install mod (.zip)"), btn_size, button_index++))
+            {
+                RoR::WasmInstallModFromFile();
+            }
+#endif
 
             if (HighlightButton(_LC("MainMenu", "Settings"), btn_size, button_index++))
             {

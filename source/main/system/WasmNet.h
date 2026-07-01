@@ -33,6 +33,13 @@ long WasmHttpGet(const std::string& url, std::vector<char>& out_data);
 /// else url unchanged. Same-origin URLs (the local build) need no proxy.
 std::string WasmProxiedUrl(const std::string& url);
 
+/// Open a browser file picker for a .zip mod, write it into /content and rescan the
+/// mod cache so it shows up in Single Player. This is the reliable way to install
+/// repository mods on the web: forum downloads are behind Cloudflare bot protection
+/// (a proxy just gets the challenge page), but the user's own browser downloads the
+/// zip fine, then hands it to the game here.
+void WasmInstallModFromFile();
+
 } // namespace RoR
 
 #endif // __EMSCRIPTEN__
