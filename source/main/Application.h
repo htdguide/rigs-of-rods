@@ -674,6 +674,7 @@ extern CVar* mp_cyclethru_net_actors; //!< Include remote actors when cycling th
 
 // New remote API
 extern CVar* remote_query_url;
+extern CVar* remote_cors_proxy;
 
 // Diagnostic
 extern CVar* diag_auto_spawner_report;

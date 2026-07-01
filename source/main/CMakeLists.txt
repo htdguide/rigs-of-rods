@@ -199,6 +199,7 @@ set(SOURCE_FILES
         system/Console.{h,cpp}
         system/ConsoleCmd.{h,cpp}
         system/CVar.{h,cpp}
+        system/WasmNet.{h,cpp}
         terrain/OgreTerrainPSSMMaterialGenerator.{h,cpp}
         terrain/ProceduralManager.{h,cpp}
         terrain/ProceduralRoad.{h,cpp}
@@ -312,7 +313,10 @@ if (EMSCRIPTEN)
         # workers) on the web build, so it needs none. RoR uses ~8.
         -sPTHREAD_POOL_SIZE=12
         -sFORCE_FILESYSTEM=1 -sEXIT_RUNTIME=0 -sASSERTIONS=1
-        "-sEXPORTED_RUNTIME_METHODS=FS,callMain,PThread"
+        # Browser fetch/XHR transport for HTTP(S) - libcurl has no TLS backend on web.
+        # Used by WasmNet for the online repository (emscripten_fetch).
+        -sFETCH=1
+        "-sEXPORTED_RUNTIME_METHODS=FS,callMain,PThread,ccall,cwrap"
         # Bundle RoR's base resources into MEMFS at /resources (where
         # SetUpResourcesDir looks). Generated into bin/resources at configure.
         "--preload-file=${CMAKE_BINARY_DIR}/bin/resources@/resources"

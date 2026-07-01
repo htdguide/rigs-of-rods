@@ -76,6 +76,10 @@ void Console::cVarSetupBuiltins()
     App::mp_cyclethru_net_actors = this->cVarCreate("mp_cyclethru_net_actors", "",                           CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
 
     App::remote_query_url        = this->cVarCreate("remote_query_url",        "",                           CVAR_ARCHIVE,                     "https://v2.api.rigsofrods.org");
+    // Web build only: prefix prepended to repository/API URLs so cross-origin requests
+    // can go through a CORS proxy (browsers block direct cross-origin fetches and RoR's
+    // servers don't send CORS headers). Empty = no proxy (same-origin URLs only).
+    App::remote_cors_proxy       = this->cVarCreate("remote_cors_proxy",       "Repository CORS proxy",      CVAR_ARCHIVE,                     "");
 
     App::diag_auto_spawner_report= this->cVarCreate("diag_auto_spawner_report","AutoActorSpawnerReport",     CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
     App::diag_camera             = this->cVarCreate("diag_camera",             "Camera Debug",               CVAR_ARCHIVE | CVAR_TYPE_BOOL,    "false");
