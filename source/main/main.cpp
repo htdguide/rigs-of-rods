@@ -21,6 +21,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include "WasmNet.h"
 #endif
 
 #include "Actor.h"
@@ -117,6 +118,12 @@ int main(int argc, char *argv[])
 
         // Process command line params - updates 'cli_*' cvars
         App::GetConsole()->processCommandLine(argc, argv);
+
+#ifdef __EMSCRIPTEN__
+        // The browser has no command line; settings a visitor needs to supply
+        // (currently the CORS proxy) ride in the page URL instead.
+        RoR::WasmApplyUrlSettings();
+#endif
 
         if (App::app_state->getEnum<AppState>() == AppState::PRINT_HELP_EXIT)
         {

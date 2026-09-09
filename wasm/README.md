@@ -117,3 +117,84 @@ them (see the TODO in `source/main/CMakeLists.txt`) is the main lever left.
 
 Note also `-sINITIAL_MEMORY=1024MB`: every tab reserves a 1 GB `SharedArrayBuffer`
 up front, which rules out most phones and low-memory machines regardless of host.
+
+
+## Online repository (installing mods)
+
+Browsing the repository works out of the box: `v2.api.rigsofrods.org` sends
+`Access-Control-Allow-Origin: *`, so the browser can read it directly.
+
+**Downloading** does not, and the reason is not what an earlier commit message
+claimed. `forum.rigsofrods.org` serves the file correctly — a plain request for
+`/resources/1401/download?file=31555` returns HTTP 200 and 11,089,634 valid ZIP
+bytes, from nginx, with no bot challenge. What it does not send is an
+`Access-Control-Allow-Origin` header, so the *browser* discards the response
+before the game sees it. `emscripten_fetch` reports that as status 0 with no
+detail, which is why it used to look like nothing happened at all.
+
+So the web build needs a CORS proxy, named by the `remote_cors_proxy` cvar. The
+web build ships with a working default (`https://cors.htdguide.com/?url=`, an
+allowlisted proxy restricted to the two Rigs of Rods hosts), so the repository
+installs mods out of the box.
+
+There is no settings UI for the cvar and RoR.cfg lives in MEMFS (wiped every
+reload), so on the web it is also readable from the page URL. Precedence is
+**page URL > RoR.cfg > built-in default**:
+
+```
+https://<host>/?cors_proxy=https://my-proxy.example/?url=   # use another proxy
+https://<host>/?cors_proxy=                                 # disable (present but empty)
+https://<host>/                                             # built-in default
+```
+
+`WasmProxiedUrl` accepts three proxy shapes. A download URL carries its own
+`?file=NNNN` query, so it has to be percent-encoded for the query-style ones:
+
+| proxy string | result |
+| --- | --- |
+| `https://host/{url}` | target percent-encoded into the placeholder |
+| `https://host/?url=` | trailing `=` → target percent-encoded and appended |
+| `https://host/` | prefix style → target appended verbatim |
+
+### Free public proxies do not work
+
+Twelve were tested against a real 11 MB mod download (codetabs, allorigins,
+corsproxy.io, cors.lol, corsfix, isomorphic-git, thingproxy, whateverorigin,
+cors.eu.org, cors-anywhere, test.cors.workers.dev). **All twelve failed**, and
+mostly not because of the size — codetabs and allorigins return Cloudflare's
+`error code: 522` (their own origins are down) even for a one-line payload,
+cors.lol and cors.eu.org rate-limit, corsfix and cors-anywhere require
+registration, thingproxy does not resolve. Do not ship one as a default; it will
+fail silently for every visitor.
+
+### Use your own
+
+Two ready-made options, both allowlisted to `forum.rigsofrods.org` and
+`v2.api.rigsofrods.org` so neither is an open relay.
+
+**On a VPS** — any small HTTPS service that: accepts `?url=<encoded>` and the
+prefix form; answers `OPTIONS` with 204; sends `Access-Control-Allow-Origin: *`,
+`Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`,
+`Access-Control-Expose-Headers` and `Cross-Origin-Resource-Policy: cross-origin`
+on every reply; streams the body rather than buffering (mod zips run 10-100 MB);
+and rejects any other host with 403. HTTPS is mandatory — the game page is
+HTTPS, so an http:// proxy is blocked as mixed content. `Cross-Origin-Resource-Policy`
+is needed because the page is cross-origin isolated.
+
+**On Cloudflare** — `wasm/cors-proxy-worker.js` is a ready-to-deploy Worker (free tier is
+100k requests/day, which is far more than this needs). It is restricted to
+`forum.rigsofrods.org` and `v2.api.rigsofrods.org`, so it is not an open relay
+that could be abused through your account.
+
+```bash
+npm i -g wrangler
+wrangler deploy wasm/cors-proxy-worker.js
+# then open:  https://<host>/?cors_proxy=https://<worker>.workers.dev/?url=
+```
+
+### Installing without any of this
+
+The main menu's **Install mod (.zip)** button needs no proxy at all — the
+visitor's own browser downloads the zip, and the picker hands the bytes straight
+to MEMFS. Note the known limitation from `13d91a7`: installs land in MEMFS and
+do not survive a reload (IDBFS persistence is still a follow-up).

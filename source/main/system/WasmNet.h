@@ -33,11 +33,18 @@ long WasmHttpGet(const std::string& url, std::vector<char>& out_data);
 /// else url unchanged. Same-origin URLs (the local build) need no proxy.
 std::string WasmProxiedUrl(const std::string& url);
 
+/// Apply settings passed in the page URL's query string. The web build has no
+/// settings UI for the CORS proxy and its RoR.cfg lives in MEMFS (wiped on reload),
+/// so "?cors_proxy=..." is the only way a visitor can supply one. Call once at
+/// startup, after cVarSetupBuiltins().
+void WasmApplyUrlSettings();
+
 /// Open a browser file picker for a .zip mod, write it into /content and rescan the
 /// mod cache so it shows up in Single Player. This is the reliable way to install
-/// repository mods on the web: forum downloads are behind Cloudflare bot protection
-/// (a proxy just gets the challenge page), but the user's own browser downloads the
-/// zip fine, then hands it to the game here.
+/// repository mods on the web: forum.rigsofrods.org serves the file fine (HTTP 200)
+/// but sends no Access-Control-Allow-Origin, so a browser fetch of it is blocked
+/// unless 'remote_cors_proxy' points at a proxy that adds the header. A file the
+/// user downloaded themselves has no such restriction.
 void WasmInstallModFromFile();
 
 } // namespace RoR

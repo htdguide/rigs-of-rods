@@ -408,7 +408,28 @@ void DownloadResourceFile(RepoFileInstallRequest request)
                 << "[RoR|Repository] Failed to download resource;"
                 << " Error: '" << curl_easy_strerror(curl_result) << "'; HTTP status code: " << response_code;
 
+            // A transport failure with no HTTP status is what a browser CORS block
+            // looks like from inside wasm - emscripten_fetch cannot see the reason.
+            // Say so, because the fix (set 'remote_cors_proxy') is not guessable.
+            std::string reason = fmt::format("HTTP status {}", response_code);
+#ifdef __EMSCRIPTEN__
+            if (response_code == 0)
+            {
+                reason = App::remote_cors_proxy->getStr().empty()
+                    ? "blocked by the browser (cross-origin). The download host sends no "
+                      "CORS headers, so the web build needs cvar 'remote_cors_proxy' set "
+                      "to a proxy that adds them."
+                    : fmt::format("blocked by the browser (cross-origin) even via proxy '{}'.",
+                        App::remote_cors_proxy->getStr());
+            }
+#endif
+            App::GetConsole()->putMessage(
+                Console::CONSOLE_MSGTYPE_INFO, Console::CONSOLE_SYSTEM_ERROR,
+                fmt::format("Repository: download of '{}' failed - {}", request.rfir_filename, reason));
+
             App::GetGameContext()->PushMessage(Message(MSG_NET_DOWNLOAD_REPOFILE_FAILURE, new RepoFileInstallRequest(request)));
+            curl_easy_cleanup(curl);
+            return; // do NOT also report success below
         }
     }
     catch (Ogre::Exception& oex)
@@ -417,6 +438,11 @@ void DownloadResourceFile(RepoFileInstallRequest request)
             Console::CONSOLE_MSGTYPE_INFO, Console::CONSOLE_SYSTEM_ERROR,
             fmt::format("Repository UI: cannot download file '{}' - {}",
                 url, oex.getFullDescription()));
+
+        // The .part stream never completed, so there is nothing to install.
+        App::GetGameContext()->PushMessage(Message(MSG_NET_DOWNLOAD_REPOFILE_FAILURE, new RepoFileInstallRequest(request)));
+        curl_easy_cleanup(curl);
+        return;
     }
     curl_easy_cleanup(curl);
     curl = nullptr;
