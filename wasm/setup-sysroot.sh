@@ -70,6 +70,14 @@ fi
 # (RenderSystems/GLSupport/src/EGL/Emscripten). Build only what the web target
 # needs: GLES2 render system, no D3D/GL, no Cg, no samples/tools.
 #
+# The SWIG language bindings (CSHARP/PYTHON/JAVA) default to ON and turn
+# themselves on merely because swig is installed, so a dev box without swig
+# silently skips them while a CI runner that ships it builds them. The Csharp
+# one links a SHARED module, which forces wasm dynamic linking and then fails:
+# emscripten's port libraries (libfreetype) are not built PIC. RoR uses none of
+# the bindings, so disable them explicitly rather than relying on swig being
+# absent.
+#
 # TODO(phase-2): finalize these options against the Emscripten EGL window and
 # install into $SYSROOT.
 emcmake cmake -S "$HERE/ogre" -B "$HERE/ogre/build-emscripten" -G Ninja \
@@ -87,6 +95,9 @@ emcmake cmake -S "$HERE/ogre" -B "$HERE/ogre/build-emscripten" -G Ninja \
   -DOGRE_BUILD_SAMPLES=OFF \
   -DOGRE_BUILD_TOOLS=OFF \
   -DOGRE_BUILD_TESTS=OFF \
+  -DOGRE_BUILD_COMPONENT_CSHARP=OFF \
+  -DOGRE_BUILD_COMPONENT_PYTHON=OFF \
+  -DOGRE_BUILD_COMPONENT_JAVA=OFF \
   -DOGRE_BUILD_COMPONENT_TERRAIN=ON \
   -DOGRE_BUILD_COMPONENT_PAGING=ON \
   -DOGRE_BUILD_COMPONENT_OVERLAY=ON \
