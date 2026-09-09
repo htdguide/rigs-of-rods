@@ -60,10 +60,31 @@ jobs:
           sudo apt-get update
           sudo apt-get -y install ninja-build ccache
 
-      - uses: mymindstorm/setup-emsdk@v14
-        with:
-          version: ${{ env.EMSDK_VERSION }}
-          actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
+      # emsdk must live at a STABLE absolute path. Ogre's installed CMake target
+      # files bake in the absolute path of libfreetype.a inside the emsdk cache,
+      # so if emsdk moves between runs, every restored sysroot points at a dead
+      # path and the link fails with "missing and no known rule to make it".
+      # mymindstorm/setup-emsdk installs into $RUNNER_TEMP/<random-uuid>/, which
+      # changes every run, so it cannot be used together with a cached sysroot.
+      - name: Set up emsdk
+        run: |
+          rm -rf "$HOME/emsdk"
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          cd "$HOME/emsdk"
+          ./emsdk install  "${EMSDK_VERSION}"
+          ./emsdk activate "${EMSDK_VERSION}"
+          # Export the toolchain to the remaining steps.
+          source ./emsdk_env.sh > /dev/null 2>&1
+          echo "EMSDK=$EMSDK"                       >> "$GITHUB_ENV"
+          echo "EMSDK_NODE=$EMSDK_NODE"             >> "$GITHUB_ENV"
+          echo "$EMSDK"                             >> "$GITHUB_PATH"
+          echo "$EMSDK/upstream/emscripten"         >> "$GITHUB_PATH"
+          echo "$(dirname "$EMSDK_NODE")"           >> "$GITHUB_PATH"
+
+      - name: Verify toolchain
+        run: |
+          emcc -v 2>&1 | head -2
+          echo "emsdk at: $(em-config EMSCRIPTEN_ROOT)"
 
       # Cache key tracks the sysroot recipe *and* the upstream fork commits, so
       # pushing to htdguide/ogre@wasm-port (or mygui / OIS) rebuilds the sysroot
@@ -85,7 +106,7 @@ jobs:
           path: |
             wasm/sysroot
             wasm/rtshaderlib
-          key: wasm-sysroot-${{ env.EMSDK_VERSION }}-${{ hashFiles('wasm/setup-sysroot.sh') }}-${{ steps.deps.outputs.ogre }}-${{ steps.deps.outputs.mygui }}-${{ steps.deps.outputs.ois }}
+          key: wasm-sysroot-v2-${{ env.EMSDK_VERSION }}-${{ hashFiles('wasm/setup-sysroot.sh') }}-${{ steps.deps.outputs.ogre }}-${{ steps.deps.outputs.mygui }}-${{ steps.deps.outputs.ois }}
 
       # zlib and freetype are emscripten *ports*: they are built into the emscripten
       # cache, not into wasm/sysroot. setup-sysroot.sh does that too, but it is
