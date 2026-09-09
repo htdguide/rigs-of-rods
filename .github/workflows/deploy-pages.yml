@@ -87,6 +87,14 @@ jobs:
             wasm/rtshaderlib
           key: wasm-sysroot-${{ env.EMSDK_VERSION }}-${{ hashFiles('wasm/setup-sysroot.sh') }}-${{ steps.deps.outputs.ogre }}-${{ steps.deps.outputs.mygui }}-${{ steps.deps.outputs.ois }}
 
+      # zlib and freetype are emscripten *ports*: they are built into the emscripten
+      # cache, not into wasm/sysroot. setup-sysroot.sh does that too, but it is
+      # skipped on a sysroot cache hit - so build them unconditionally here, or a
+      # cache hit configures against an emsdk that has no zlib and Configure fails
+      # with "Could NOT find ZLIB". Cheap and idempotent when already present.
+      - name: Build emscripten ports
+        run: embuilder build zlib freetype
+
       - name: Build wasm sysroot
         if: steps.sysroot-cache.outputs.cache-hit != 'true'
         run: |
