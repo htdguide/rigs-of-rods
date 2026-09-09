@@ -1,0 +1,176 @@
+---
+# Build the WebAssembly port and publish it to GitHub Pages.
+#
+# Pages cannot send COOP/COEP headers, and this build needs SharedArrayBuffer
+# (it is compiled with -pthread). wasm/coi-serviceworker.js installs those
+# headers from a service worker instead; wasm/shell.html loads it. See
+# wasm/README.md.
+#
+# One-time setup: repo Settings -> Pages -> Source: "GitHub Actions".
+name: Deploy web build to GitHub Pages
+
+on:
+  push:
+    branches: [ wasm-port ]
+    # Docs-only pushes don't change the deployed bytes.
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+  workflow_dispatch:
+
+# Least privilege: read the source, mint an OIDC token, write the Pages deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. Do not cancel a running deploy half-way.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  EMSDK_VERSION: 6.0.1
+  OGRE_FORK: https://github.com/htdguide/ogre.git
+  OGRE_BRANCH: wasm-port
+  MYGUI_FORK: https://github.com/htdguide/mygui.git
+  OIS_FORK: https://github.com/htdguide/OIS.git
+
+jobs:
+  build:
+    name: Build wasm
+    runs-on: ubuntu-24.04
+    # Cold cache builds Ogre + MyGUI + curl + AngelScript + RoR from scratch.
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      # The Ogre/MyGUI/RoR build trees plus the emsdk don't comfortably fit
+      # alongside the runner's preinstalled toolchains.
+      - name: Reclaim disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install ninja-build ccache
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache-${{ env.EMSDK_VERSION }}
+
+      # Cache key tracks the sysroot recipe *and* the upstream fork commits, so
+      # pushing to htdguide/ogre@wasm-port (or mygui / OIS) rebuilds the sysroot
+      # on the next run instead of silently reusing a stale one.
+      - name: Resolve dependency revisions
+        id: deps
+        run: |
+          {
+            echo "ogre=$(git ls-remote "$OGRE_FORK" "refs/heads/$OGRE_BRANCH" | cut -f1)"
+            echo "mygui=$(git ls-remote "$MYGUI_FORK" refs/heads/wasm-port | cut -f1)"
+            echo "ois=$(git ls-remote "$OIS_FORK" refs/heads/wasm-port | cut -f1)"
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Cache wasm sysroot
+        id: sysroot-cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            wasm/sysroot
+            wasm/rtshaderlib
+          key: wasm-sysroot-${{ env.EMSDK_VERSION }}-${{ hashFiles('wasm/setup-sysroot.sh') }}-${{ steps.deps.outputs.ogre }}-${{ steps.deps.outputs.mygui }}-${{ steps.deps.outputs.ois }}
+
+      - name: Build wasm sysroot
+        if: steps.sysroot-cache.outputs.cache-hit != 'true'
+        run: |
+          ./wasm/setup-sysroot.sh
+          # RTShaderLib lives in the Ogre checkout, which is not cached (it is
+          # gigabytes of build tree). Stash just the GLSL library alongside the
+          # sysroot so a cache hit still has it.
+          rm -rf wasm/rtshaderlib
+          cp -r wasm/ogre/Samples/Media/RTShaderLib/GLSL wasm/rtshaderlib
+          # Reclaim the dependency build trees; only the install prefix matters.
+          rm -rf wasm/ogre wasm/mygui wasm/ois wasm/curl wasm/socketw \
+                 wasm/zziplib wasm/fmt wasm/rapidjson wasm/angelscript_sdk
+          df -h /
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ror-wasm-${{ env.EMSDK_VERSION }}
+          max-size: 2G
+
+      # Optional extra content packs. They are gitignored (16 MB of binaries), so
+      # CI pulls them from a release tagged `web-content` when one exists. Without
+      # it the build still succeeds - the packs are conditional preloads.
+      - name: Fetch optional content packs
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download web-content --repo "$GITHUB_REPOSITORY" \
+            --dir content --clobber --pattern '*.zip' || \
+            echo "no 'web-content' release; building without the extra packs"
+          ls -la content/*.zip || true
+
+      - name: Configure
+        run: |
+          emcmake cmake -S . -B build-emscripten -G Ninja \
+            -DCMAKE_PREFIX_PATH="$PWD/wasm/sysroot" \
+            -DCMAKE_FIND_ROOT_PATH="$PWD/wasm/sysroot" \
+            -DOGRE_DIR="$PWD/wasm/sysroot/lib/OGRE/cmake" \
+            -DROR_USE_PCH=ON -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      # The resource zips must exist before the link step, because they are
+      # baked into RoR.data by --preload-file. RTShaderLib goes in with them:
+      # WebGL2 has no fixed-function pipeline, so RTSS generates shaders from it.
+      - name: Stage resources
+        run: |
+          cmake --build build-emscripten --target zip_folder_resources
+          rm -rf build-emscripten/bin/resources/RTShaderLib
+          cp -r wasm/rtshaderlib build-emscripten/bin/resources/RTShaderLib
+          ls build-emscripten/bin/resources
+
+      - name: Build
+        env:
+          CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
+        run: cmake --build build-emscripten -j"$(nproc)"
+
+      - name: Assemble site
+        run: |
+          rm -rf _site && mkdir -p _site
+          cp build-emscripten/bin/RoR.html \
+             build-emscripten/bin/RoR.js \
+             build-emscripten/bin/RoR.wasm \
+             build-emscripten/bin/RoR.data \
+             build-emscripten/bin/coi-serviceworker.js \
+             _site/
+          # Pages serves index.html for the directory root.
+          cp _site/RoR.html _site/index.html
+          touch _site/.nojekyll
+          du -ch _site/* | tail -1
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

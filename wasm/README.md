@@ -56,14 +56,64 @@ cp -r wasm/ogre/Samples/Media/RTShaderLib/GLSL build-emscripten/bin/resources/RT
 cmake --build build-emscripten -j4
 ```
 
-Serve `build-emscripten/bin/` with COOP/COEP headers and open `RoR.html`.
+Serve `build-emscripten/bin/` and open `RoR.html`.
 
 ## Serve
 
 The build uses pthreads → needs `SharedArrayBuffer` → the page must be
-[cross-origin isolated](https://web.dev/articles/coop-coep). Serve with:
+[cross-origin isolated](https://web.dev/articles/coop-coep):
 
 ```
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
+
+Where the host can send those headers, it should. Where it can't — GitHub Pages,
+any plain static host — `coi-serviceworker.js` installs them from a service
+worker instead. `wasm/shell.html` loads it, and CMake stages it next to
+`RoR.html`, so a dumb static server is enough:
+
+```bash
+python3 -m http.server -d build-emscripten/bin 8080
+```
+
+Caveats of the service-worker route: it costs one extra page reload on a cold
+visit, it needs a secure context (`https://`, or `localhost`), and it cannot
+work where service workers are unavailable (private/incognito windows in some
+browsers). The shell detects `crossOriginIsolated === false` and says so rather
+than failing with a bare `SharedArrayBuffer is not defined`.
+
+## GitHub Pages
+
+`.github/workflows/deploy-pages.yml` builds the port and publishes it on every
+push to `wasm-port` (plus manual `workflow_dispatch`). Enable it once under
+**Settings → Pages → Source: GitHub Actions**.
+
+How it works around Pages' limits:
+
+| Limit | Value | Handling |
+| --- | --- | --- |
+| Custom response headers | not supported | `coi-serviceworker.js` |
+| Max file size in git | 100 MB | `RoR.data` is 127 MB, over the limit, so nothing is committed — the workflow uploads a Pages *artifact* instead, which has no per-file cap |
+| Published site size | 1 GB | payload is ~150 MB |
+| Bandwidth | 100 GB/month (soft) | ~650 cold loads/month; browser cache covers repeat visits |
+
+The sysroot is cached against `setup-sysroot.sh` plus the resolved commit of
+each engine fork (`htdguide/ogre@wasm-port`, `mygui`, `OIS`), so pushing to a
+fork invalidates it and the next run rebuilds. A cold run builds everything and
+takes hours; a warm one only rebuilds RoR.
+
+`content/nhelens.zip` and `content/ChevyS1023.zip` are gitignored, so CI has no
+copy. To include them, attach them to a release tagged `web-content` — the
+workflow downloads that release when it exists and skips it otherwise.
+
+### Payload
+
+~150 MB cold: `RoR.data` 127 MB (already-compressed zips, gzip buys nothing) +
+`RoR.wasm` 23 MB (~6 MB gzipped by Pages) + `RoR.js` 0.5 MB. Biggest items
+inside `RoR.data`: `sounds.zip` 40 MB, `textures.zip` 17 MB, `wallpapers.zip`
+16 MB. Fetching content packs on demand instead of preloading
+them (see the TODO in `source/main/CMakeLists.txt`) is the main lever left.
+
+Note also `-sINITIAL_MEMORY=1024MB`: every tab reserves a 1 GB `SharedArrayBuffer`
+up front, which rules out most phones and low-memory machines regardless of host.

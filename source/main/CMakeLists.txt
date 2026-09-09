@@ -327,6 +327,15 @@ if (EMSCRIPTEN)
         "--preload-file=${CMAKE_SOURCE_DIR}/content/dafsemi@/content/dafsemi"
         ${ROR_WASM_EXTRA_PRELOADS}
         --shell-file ${CMAKE_SOURCE_DIR}/wasm/shell.html)
+    # The shell loads coi-serviceworker.js to obtain COOP/COEP (and therefore
+    # SharedArrayBuffer) on static hosts that cannot send those headers, e.g.
+    # GitHub Pages. It has to sit next to the HTML, and it must stay a separate
+    # file: it registers itself using document.currentScript.src.
+    add_custom_command(TARGET ${BINNAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/wasm/coi-serviceworker.js
+            $<TARGET_FILE_DIR:${BINNAME}>/coi-serviceworker.js
+        COMMENT "Staging coi-serviceworker.js next to ${BINNAME}.html")
 endif ()
 
 if (WIN32)
